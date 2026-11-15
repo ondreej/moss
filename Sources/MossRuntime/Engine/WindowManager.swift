@@ -66,6 +66,9 @@ public final class WindowManager {
     var dormant: [WindowID: DormantWindow] = [:]
     /// Windows that made themselves cover a whole display, as video players do for fullscreen.
     var coveringWindows: Set<WindowID> = []
+    /// Windows their application closed for a fullscreen window of its own, kept for the
+    /// window it opens in their place when fullscreen ends.
+    var replacedByFullscreen: [WindowID: DormantWindow] = [:]
     /// A tiled window being dragged by its title bar or resized by its edges.
     var userDrag: (window: WindowID, resized: Bool)?
     /// A floating window the user is moving by its title bar.

@@ -126,6 +126,13 @@ final class Session {
         return Frame(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height)
     }
 
+    /// The application whose window is in front of all others, leaving out Moss's borders.
+    static func frontmostOwner() -> pid_t? {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }
+        let front = list.first { ($0[kCGWindowLayer as String] as? Int) == 0 && ($0[kCGWindowOwnerName as String] as? String) != "Moss" }
+        return front?[kCGWindowOwnerPID as String] as? pid_t
+    }
+
     /// Waits until the window server shows every visible window where Moss says it is.
     func expectOnScreen(_ windows: [WindowInfo]) throws {
         for window in windows where !window.isHidden {
@@ -239,6 +246,24 @@ let scenarios: [Scenario] = [
             return frame.width >= display.frame.width - 2
         }
         try s.run("fullscreen")
+    },
+
+    Scenario(name: "video fullscreen in a window of its own") { s in
+        // Browsers show a video in fullscreen by closing the window and covering the screen
+        // with another, then open a new window when it ends. The window beside must not come
+        // up over the video, and the new window takes the old one's tile.
+        let beside = try s.open("beside")[0]
+        let video = try s.open("video", kind: "video")[0]
+        let tiles = try s.settledFrames([beside, video])
+        kill(video.pid, SIGUSR1)
+        try s.waitUntil("the video window to leave the layout") { try !s.windows().contains { $0.id == video.id } }
+        Thread.sleep(forTimeInterval: 0.5)
+        try s.expect(Session.frontmostOwner() == video.pid, "a window came up over the video; front: pid \(Session.frontmostOwner().map(String.init) ?? "none")")
+        kill(video.pid, SIGUSR1)
+        let back = try s.waitFor("the video window to come back") { try s.windows().first { $0.title == video.title && $0.id != video.id } }
+        let frames = try s.settledFrames([beside, back])
+        try s.expect(zip(frames, tiles).allSatisfy { $0.close(to: $1) }, "windows at \(frames) instead of their tiles \(tiles)")
+        try s.waitUntil("the video window to have focus; focused: \(String(describing: try? s.focused()?.title))") { try s.focused()?.id == back.id }
     },
 
     Scenario(name: "dialogs and fixed-size windows float") { s in

@@ -40,6 +40,19 @@ final class AppAgent: @unchecked Sendable {
     private var unverified: Set<WindowID> = []
     private var verifyTimer: CFRunLoopTimer?
     private var isAttached = false
+    /// The window last reported as focused.
+    private var reportedFocus: WindowID?
+    /// Fullscreen windows the application put up in place of a window it closed, as browsers
+    /// do for video.
+    private var standIns: [StandIn] = []
+    /// The window whose stand-in just closed, to be replaced by the next window that opens.
+    private var returning: StandIn?
+
+    private struct StandIn {
+        var element: AXElement
+        var replaced: WindowID
+        var kind: WindowProperties.Kind
+    }
 
     init(pid: pid_t, appID: String, appName: String, floatsWindows: Bool, isFrontmost: @escaping @Sendable () -> Bool, emit: @escaping @Sendable (PlatformEvent) -> Void) {
         self.pid = pid
@@ -252,18 +265,31 @@ final class AppAgent: @unchecked Sendable {
     private func handle(_ notification: String, element: AXElement) {
         switch notification {
         case kAXWindowCreatedNotification:
-            if let snapshot = track(element) { emit(.windowAppeared(snapshot)) }
+            if let snapshot = track(element) { announce(snapshot) }
 
         case kAXFocusedWindowChangedNotification:
             reportFocus(of: element)
 
         case kAXUIElementDestroyedNotification:
+            if let index = standIns.firstIndex(where: { $0.element == element }) {
+                standInClosed(standIns.remove(at: index))
+                return
+            }
             guard let id = id(of: element) else { return }
+            let kind = kinds[id]
             windows[id] = nil
             knownFrames[id] = nil
             kinds[id] = nil
             nativeFullscreen.remove(id)
-            if unannounced.remove(id) == nil { emit(.windowDisappeared(id)) }
+            guard unannounced.remove(id) == nil else { return }
+            if id == reportedFocus, let kind, let standIn = fullscreenStandIn() {
+                // The application put a window of its own over the whole display in place of
+                // this one, as browsers do for video, and opens another when it leaves.
+                standIns.append(StandIn(element: standIn, replaced: id, kind: kind))
+                emit(.windowReplacedByFullscreen(id))
+            } else {
+                emit(.windowDisappeared(id))
+            }
 
         case kAXMovedNotification, kAXResizedNotification:
             guard let id = id(of: element), let frame = element.frame else { return }
@@ -312,16 +338,18 @@ final class AppAgent: @unchecked Sendable {
             return
         }
         guard let element, let windowID = element.windowID else {
+            reportedFocus = nil
             emit(.focusChanged(nil))
             confirmFocusShortly()
             return
         }
         if windows[windowID] == nil, let snapshot = track(element) {
-            emit(.windowAppeared(snapshot))
+            announce(snapshot)
         }
         // A sheet has focus in place of its window, which still counts as focused.
         let focused = windows[windowID] != nil ? windowID : trackedWindow(holding: element)
         Log.platform.debug("\(self.appID, privacy: .public): focused window \(windowID.address, privacy: .public), counted as \(focused?.address ?? "none", privacy: .public)")
+        reportedFocus = focused
         emit(.focusChanged(focused))
         if focused == nil { confirmFocusShortly() }
     }
@@ -344,6 +372,7 @@ final class AppAgent: @unchecked Sendable {
             guard let self, isFrontmost(), let element = application.focusedWindow, let id = element.windowID,
                   let focused = windows[id] != nil ? id : trackedWindow(holding: element) else { return }
             Log.platform.debug("\(self.appID, privacy: .public): focus settled on \(focused.address, privacy: .public)")
+            reportedFocus = focused
             emit(.focusChanged(focused))
         }
         CFRunLoopAddTimer(runLoop, timer, .defaultMode)
@@ -355,10 +384,48 @@ final class AppAgent: @unchecked Sendable {
             let known = Set(windows.keys)
             ensureAttached()
             for snapshot in scan() where !known.contains(snapshot.id) {
-                emit(.windowAppeared(snapshot))
+                announce(snapshot)
             }
             reportFocus(of: application.focusedWindow)
         }
+    }
+
+    // MARK: - Fullscreen stand-ins
+
+    /// Announces a window that just opened: as the one returning from fullscreen if that is
+    /// awaited, otherwise as a new window.
+    private func announce(_ snapshot: WindowSnapshot) {
+        if let standIn = returning, standIn.kind == snapshot.properties.kind {
+            returning = nil
+            emit(.windowReturnedFromFullscreen(standIn.replaced, snapshot))
+        } else {
+            emit(.windowAppeared(snapshot))
+        }
+    }
+
+    /// The focused window if it is one Moss does not arrange spread over a whole display:
+    /// a fullscreen window the application put up of its own, watched until it closes.
+    private func fullscreenStandIn() -> AXElement? {
+        guard let element = application.focusedWindow, let id = element.windowID, windows[id] == nil,
+              let frame = element.frame, Displays.isWholeDisplay(frame), let observer else { return nil }
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        guard AXObserverAddNotification(observer, element.ref, kAXUIElementDestroyedNotification as CFString, refcon) == .success else {
+            return nil
+        }
+        return element
+    }
+
+    /// The fullscreen ended: the window the application opens next takes the place of the one
+    /// the stand-in replaced. If none opens, that one is gone for good.
+    private func standInClosed(_ standIn: StandIn) {
+        if let previous = returning { emit(.windowDisappeared(previous.replaced)) }
+        returning = standIn
+        let timer = CFRunLoopTimerCreateWithHandler(nil, CFAbsoluteTimeGetCurrent() + 1, 0, 0, 0) { [weak self] _ in
+            guard let self, returning?.replaced == standIn.replaced else { return }
+            returning = nil
+            emit(.windowDisappeared(standIn.replaced))
+        }
+        CFRunLoopAddTimer(runLoop, timer, .defaultMode)
     }
 
     // MARK: - Commands

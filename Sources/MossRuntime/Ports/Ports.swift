@@ -31,6 +31,12 @@ public enum PlatformEvent: Hashable, Sendable {
     /// The window entered (`true`) or left (`false`) macOS's own fullscreen mode, which moves
     /// it to a separate Space outside Moss's workspaces.
     case windowNativeFullscreen(WindowID, Bool)
+    /// The application closed the window and covers the display with a fullscreen window of
+    /// its own in its place, as browsers do for video.
+    case windowReplacedByFullscreen(WindowID)
+    /// Leaving that fullscreen, the application opened a new window in place of the one it
+    /// closed.
+    case windowReturnedFromFullscreen(WindowID, WindowSnapshot)
     case focusChanged(WindowID?)
     case applicationTerminated(pid: Int32)
     /// The application was hidden (`true`) or shown again (`false`).

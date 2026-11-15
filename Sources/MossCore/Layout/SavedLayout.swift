@@ -21,6 +21,13 @@ public enum SavedLayout: Hashable, Sendable, Codable {
         case .scrolling(let layout): layout
         }
     }
+
+    /// The same layout with `new` where `old` was.
+    public func replacing(_ old: WindowID, with new: WindowID) -> SavedLayout {
+        var layout = self.layout
+        layout.replace(old, with: new)
+        return SavedLayout(layout)
+    }
 }
 
 extension World {

@@ -12,7 +12,10 @@ extension WindowManager {
         let before = world
         var effects: [Effect] = []
         switch event {
-        case .windowAppeared(let snapshot):
+        case .windowReturnedFromFullscreen(let id, let snapshot) where replacedByFullscreen[id] != nil:
+            returnFromFullscreen(id, as: snapshot)
+
+        case .windowAppeared(let snapshot), .windowReturnedFromFullscreen(_, let snapshot):
             observedFrames[snapshot.id] = snapshot.frame
             world.addWindow(snapshot.id, properties: snapshot.properties, frame: snapshot.frame, origin: .opened)
             if let launch = activationSwitch, launch.pid == snapshot.properties.pid, ContinuousClock.now - launch.at < .seconds(1),
@@ -32,6 +35,11 @@ extension WindowManager {
             adoptExisting(snapshot)
 
         case .windowDisappeared(let id):
+            if let replaced = replacedByFullscreen[id], world.focusedWindowID == nil, world.isVisible(replaced.placement.workspace) {
+                // Its fullscreen ended without it coming back, as when the tab closed: focus
+                // goes on as if it had closed just now.
+                world.restoreFocus(on: replaced.placement.workspace)
+            }
             forget(id)
 
         case .windowFrameChanged(let id, let frame):
@@ -78,6 +86,9 @@ extension WindowManager {
 
         case .windowNativeFullscreen(let id, let fullscreen):
             if fullscreen { enterFullscreen(id) } else { leaveFullscreen(id) }
+
+        case .windowReplacedByFullscreen(let id):
+            replaceByFullscreen(id)
 
         case .focusChanged(let id):
             if let pending = pendingFocus, ContinuousClock.now - pending.since < .milliseconds(400) {
@@ -155,6 +166,7 @@ extension WindowManager {
         case .applicationTerminated(let pid):
             for window in world.windows.values where window.properties.pid == pid { forget(window.id) }
             for (id, window) in dormant where window.snapshot.properties.pid == pid { dormant[id] = nil }
+            for (id, window) in replacedByFullscreen where window.snapshot.properties.pid == pid { replacedByFullscreen[id] = nil }
 
         case .applicationHidden(let pid, let hidden):
             if hidden {
@@ -177,6 +189,7 @@ extension WindowManager {
         animator.cancel(id)
         world.removeWindow(id)
         dormant[id] = nil
+        replacedByFullscreen[id] = nil
         coveringWindows.remove(id)
         appliedFrames[id] = nil
         observedFrames[id] = nil
@@ -196,6 +209,28 @@ extension WindowManager {
             world.releaseFocus()
             appliedFocus = id
         }
+    }
+
+    /// The application closed the window for a fullscreen window of its own, which Moss does
+    /// not arrange. The window's place is kept for the one that comes back, and no other
+    /// window takes focus: it would come up over the fullscreen one.
+    func replaceByFullscreen(_ id: WindowID) {
+        let hadFocus = world.focusedWindowID == id
+        setAside(id)
+        guard let window = dormant.removeValue(forKey: id) else { return }
+        replacedByFullscreen[id] = window
+        if hadFocus { world.releaseFocus() }
+        if appliedFocus == id { appliedFocus = nil }
+    }
+
+    /// Back from that fullscreen, the application's new window takes the place of the one it
+    /// closed.
+    func returnFromFullscreen(_ id: WindowID, as snapshot: WindowSnapshot) {
+        guard var window = replacedByFullscreen.removeValue(forKey: id) else { return }
+        window.carry(over: snapshot)
+        observedFrames[snapshot.id] = snapshot.frame
+        dormant[snapshot.id] = window
+        wake([snapshot.id], onCurrentWorkspace: false)
     }
 
     /// The window left fullscreen and returns to its place, keeping focus if it has it.
@@ -393,4 +428,17 @@ struct DormantWindow {
     var group: SessionState.Group?
     /// When it left, counting up.
     var order: Int
+
+    /// Hands the window's place over to `snapshot`, the window its application opened in its
+    /// stead. It keeps the frame it had, to float back to.
+    mutating func carry(over snapshot: WindowSnapshot) {
+        let old = self.snapshot.id
+        let new = snapshot.id
+        self.snapshot = WindowSnapshot(id: new, properties: snapshot.properties, frame: self.snapshot.frame)
+        placement.window = new
+        layout = layout?.replacing(old, with: new)
+        group = group.map { group in
+            SessionState.Group(members: group.members.map { $0 == old ? new : $0 }, active: group.active == old ? new : group.active)
+        }
+    }
 }

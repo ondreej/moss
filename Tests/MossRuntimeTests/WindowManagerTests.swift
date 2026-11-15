@@ -697,6 +697,46 @@ struct WindowManagerTests {
         #expect(harness.system.frame(of: WindowID(1)) == Rect(x: 10, y: 10, width: 490, height: 580))
     }
 
+    @Test func windowsReplacedByAFullscreenWindowOfTheirOwnKeepTheirPlace() async throws {
+        let harness = try await Harness(config: "[layout]\ngaps = 0\nmargins = 0\n\n[borders]\nwidth = 0\n", windows: [snapshot(1), snapshot(2), snapshot(3)])
+        harness.manager.handle(PlatformEvent.focusChanged(WindowID(2)))
+        let tiles = [1, 2, 3].map { harness.system.frame(of: WindowID($0)) }
+        let requests = harness.system.focusRequests.count
+        // A browser closes the window and covers the display with one of its own for a video.
+        harness.manager.handle(PlatformEvent.windowReplacedByFullscreen(WindowID(2)))
+        #expect(harness.manager.world.windows[WindowID(2)] == nil)
+        // Focusing another window, or the desktop, would bring it over the video.
+        #expect(harness.system.focusRequests.count == requests)
+        #expect(harness.system.desktopFocusCount == 0)
+        harness.manager.handle(PlatformEvent.focusChanged(nil))
+        #expect(harness.system.focusRequests.count == requests)
+        // Leaving fullscreen, it opens a new window, which takes the old one's place.
+        let back = WindowSnapshot(id: WindowID(4), properties: snapshot(2).properties, frame: Rect(x: 0, y: 0, width: 1000, height: 600))
+        _ = harness.system.open(back)
+        harness.manager.handle(PlatformEvent.windowReturnedFromFullscreen(WindowID(2), back))
+        harness.manager.handle(PlatformEvent.focusChanged(WindowID(4)))
+        #expect(harness.manager.world.focusedWindowID == WindowID(4))
+        #expect([1, 4, 3].map { harness.system.frame(of: WindowID($0)) } == tiles)
+    }
+
+    @Test func aWindowReplacedByFullscreenThatNeverComesBackGivesUpItsPlace() async throws {
+        let harness = try await Harness(windows: [snapshot(1), snapshot(2)])
+        harness.manager.handle(PlatformEvent.focusChanged(WindowID(2)))
+        harness.manager.handle(PlatformEvent.windowReplacedByFullscreen(WindowID(2)))
+        harness.manager.handle(PlatformEvent.focusChanged(nil))
+        // The tab closed in fullscreen: focus goes on as after any window closed.
+        harness.manager.handle(PlatformEvent.windowDisappeared(WindowID(2)))
+        #expect(harness.manager.world.focusedWindowID == WindowID(1))
+        #expect(harness.system.lastFocused == WindowID(1))
+        // A window reported as its return after that is simply a new window.
+        let late = WindowSnapshot(id: WindowID(4), properties: snapshot(2).properties, frame: Rect(x: 100, y: 100, width: 400, height: 300))
+        _ = harness.system.open(late)
+        harness.manager.handle(PlatformEvent.windowReturnedFromFullscreen(WindowID(2), late))
+        #expect(harness.manager.world.windows[WindowID(4)] != nil)
+        #expect(harness.manager.world.windows[WindowID(2)] == nil)
+        #expect(harness.system.frame(of: WindowID(1))?.width == harness.system.frame(of: WindowID(4))?.width)
+    }
+
     @Test func focusOnWindowsMossDoesNotArrangeIsLeftAlone() async throws {
         let harness = try await Harness(windows: [snapshot(1)])
         harness.manager.handle(PlatformEvent.focusChanged(WindowID(1)))

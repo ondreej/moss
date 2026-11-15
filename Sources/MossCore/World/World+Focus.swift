@@ -42,7 +42,7 @@ extension World {
     }
 
     /// Focuses the most appropriate window on `workspace`, or nothing when it is empty.
-    mutating func restoreFocus(on workspace: WorkspaceID) {
+    public mutating func restoreFocus(on workspace: WorkspaceID) {
         guard let ws = workspaces[workspace] else {
             focusedWindowID = nil
             return

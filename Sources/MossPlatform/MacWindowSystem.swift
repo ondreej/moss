@@ -178,7 +178,12 @@ public final class MacWindowSystem: WindowSystem, @unchecked Sendable {
     private func route(_ event: PlatformEvent, from pid: pid_t) {
         switch event {
         case .windowAppeared(let snapshot), .windowDiscovered(let snapshot): owners.withLock { $0[snapshot.id] = pid }
-        case .windowDisappeared(let id): owners.withLock { $0[id] = nil }
+        case .windowDisappeared(let id), .windowReplacedByFullscreen(let id): owners.withLock { $0[id] = nil }
+        case .windowReturnedFromFullscreen(let replaced, let snapshot):
+            owners.withLock {
+                $0[replaced] = nil
+                $0[snapshot.id] = pid
+            }
         default: break
         }
         send(event)
@@ -366,14 +371,6 @@ public final class MacWindowSystem: WindowSystem, @unchecked Sendable {
         return layer > 0 && displays.contains { bounds.insetBy(dx: -1, dy: -1).contains($0) }
     }
 
-    private static func displayBounds() -> [CGRect] {
-        var count: UInt32 = 0
-        guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return [] }
-        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
-        guard CGGetActiveDisplayList(count, &ids, &count) == .success else { return [] }
-        return ids.prefix(Int(count)).map(CGDisplayBounds)
-    }
-
     public func topmostWindow(at point: Point) -> WindowID? {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
             return nil
@@ -386,7 +383,7 @@ public final class MacWindowSystem: WindowSystem, @unchecked Sendable {
             return nil
         }
         let ownPID = getpid()
-        let displays = Self.displayBounds()
+        let displays = Displays.bounds
         for info in list {
             guard let pid = info[kCGWindowOwnerPID as String] as? pid_t,
                   (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
