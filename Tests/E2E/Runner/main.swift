@@ -1,4 +1,5 @@
 import AppKit
+import IOKit.hidsystem
 import MossIPC
 
 // End-to-end tests against a running Moss instance on a real macOS session.
@@ -133,6 +134,14 @@ final class Session {
         return front?[kCGWindowOwnerPID as String] as? pid_t
     }
 
+    /// Whether the application shows a window at the floating level, as the bubble beside the
+    /// text cursor is.
+    static func hasFloatingWindow(of pid: pid_t) -> Bool {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else { return false }
+        let floating = Int(CGWindowLevelForKey(.floatingWindow))
+        return list.contains { $0[kCGWindowOwnerPID as String] as? pid_t == pid && $0[kCGWindowLayer as String] as? Int == floating }
+    }
+
     /// Waits until the window server shows every visible window where Moss says it is.
     func expectOnScreen(_ windows: [WindowInfo]) throws {
         for window in windows where !window.isHidden {
@@ -168,6 +177,19 @@ final class Session {
 
     func expect(_ condition: Bool, _ message: @autoclosure () -> String) throws {
         if !condition { throw Failure(message()) }
+    }
+}
+
+/// Caps Lock's state, set the way the key sets it.
+enum CapsLock {
+    static func set(_ isOn: Bool) {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching(kIOHIDSystemClass))
+        guard service != 0 else { return }
+        defer { IOObjectRelease(service) }
+        var connection: io_connect_t = 0
+        guard IOServiceOpen(service, mach_task_self_, UInt32(kIOHIDParamConnectType), &connection) == KERN_SUCCESS else { return }
+        defer { IOServiceClose(connection) }
+        IOHIDSetModifierLockState(connection, Int32(kIOHIDCapsLockState), isOn)
     }
 }
 
@@ -264,6 +286,22 @@ let scenarios: [Scenario] = [
         let frames = try s.settledFrames([beside, back])
         try s.expect(zip(frames, tiles).allSatisfy { $0.close(to: $1) }, "windows at \(frames) instead of their tiles \(tiles)")
         try s.waitUntil("the video window to have focus; focused: \(String(describing: try? s.focused()?.title))") { try s.focused()?.id == back.id }
+    },
+
+    Scenario(name: "the Caps Lock bubble beside the text cursor is left alone") { s in
+        // While Caps Lock is on, macOS shows a bubble beside the text cursor in a small window
+        // of the app being typed in. Focusing it would take the cursor away, which hides the
+        // bubble, and focusing the text again would bring it back, over and over.
+        let text = try s.open("text", kind: "text")[0]
+        try s.waitUntil("the text window to have focus") { try s.focused()?.id == text.id }
+        CapsLock.set(true)
+        defer { CapsLock.set(false) }
+        try s.waitUntil("macOS to show the Caps Lock bubble") { Session.hasFloatingWindow(of: text.pid) }
+        Thread.sleep(forTimeInterval: 1)
+        let managed = try s.windows().filter { $0.pid == text.pid }.map(\.title)
+        try s.expect(managed == [text.title], "Moss manages \(managed), not just \(text.title)")
+        try s.expect(try s.focused()?.id == text.id, "focus moved to \(String(describing: try? s.focused()?.title))")
+        try s.expect(Session.hasFloatingWindow(of: text.pid), "the bubble went away")
     },
 
     Scenario(name: "dialogs and fixed-size windows float") { s in

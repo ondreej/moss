@@ -75,6 +75,15 @@ struct AXElement: Hashable, @unchecked Sendable {
         return WindowID(id)
     }
 
+    /// The window server level the window is shown at, comparable with `CGWindowLevelForKey`.
+    var windowLevel: Int? {
+        guard let id = windowID else { return nil }
+        var value = UnsafeRawPointer(bitPattern: UInt(id.rawValue))
+        guard let ids = CFArrayCreate(nil, &value, 1, nil),
+              let info = (CGWindowListCreateDescriptionFromArray(ids) as? [[String: Any]])?.first else { return nil }
+        return info[kCGWindowLayer as String] as? Int
+    }
+
     var position: CGPoint? {
         guard let value = value(kAXPositionAttribute), CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
         var point = CGPoint.zero

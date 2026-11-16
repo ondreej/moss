@@ -2,10 +2,11 @@ import AppKit
 
 /// Opens test windows for the end-to-end suite.
 ///
-///     WindowFactory --tag NAME [--count N] [--kind standard|dialog|fixed|video] [--size WxH] [--min WxH]
+///     WindowFactory --tag NAME [--count N] [--kind standard|dialog|fixed|video|text] [--size WxH] [--min WxH]
 ///
 /// Window titles are `NAME 1`, `NAME 2`, … so the suite can find them. A `video` window goes
-/// fullscreen and back on SIGUSR1, the way browsers show video in fullscreen.
+/// fullscreen and back on SIGUSR1, the way browsers show video in fullscreen. A `text`
+/// window holds a text view with the cursor in it.
 struct Options {
     var tag = "window"
     var count = 1
@@ -106,7 +107,14 @@ final class Factory: NSObject, NSApplicationDelegate {
         window.isReleasedWhenClosed = false
         window.title = "\(options.tag) \(index)"
         if let minimum = options.minimum { window.contentMinSize = minimum }
-        window.contentView = LabelView(text: window.title)
+        if options.kind == "text" {
+            let text = NSTextView(frame: rect)
+            text.string = window.title
+            window.contentView = text
+            window.initialFirstResponder = text
+        } else {
+            window.contentView = LabelView(text: window.title)
+        }
         return window
     }
 }
