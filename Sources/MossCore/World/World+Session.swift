@@ -48,6 +48,8 @@ public struct SessionState: Hashable, Sendable, Codable {
     public var layoutOverrides: [WorkspaceID: LayoutKind]
     /// The window each workspace last focused, which gets focus when it is shown again.
     public var lastFocused: [WorkspaceID: WindowID]
+    /// Windows in macOS fullscreen, with the workspace each belongs to.
+    public var fullscreenSpaces: [WindowID: WorkspaceID]
 
     public init(
         placements: [Placement] = [],
@@ -57,7 +59,8 @@ public struct SessionState: Hashable, Sendable, Codable {
         homes: [WorkspaceID: Workspace.Home] = [:],
         layouts: [WorkspaceID: SavedLayout] = [:],
         layoutOverrides: [WorkspaceID: LayoutKind] = [:],
-        lastFocused: [WorkspaceID: WindowID] = [:]
+        lastFocused: [WorkspaceID: WindowID] = [:],
+        fullscreenSpaces: [WindowID: WorkspaceID] = [:]
     ) {
         self.placements = placements
         self.activeWorkspaces = activeWorkspaces
@@ -67,10 +70,11 @@ public struct SessionState: Hashable, Sendable, Codable {
         self.layouts = layouts
         self.layoutOverrides = layoutOverrides
         self.lastFocused = lastFocused
+        self.fullscreenSpaces = fullscreenSpaces
     }
 
     private enum CodingKeys: String, CodingKey {
-        case placements, activeWorkspaces, focusedWindow, groups, homes, layouts, layoutOverrides, lastFocused
+        case placements, activeWorkspaces, focusedWindow, groups, homes, layouts, layoutOverrides, lastFocused, fullscreenSpaces
     }
 
     /// Tolerates sessions written by other versions: anything missing is treated as empty.
@@ -85,6 +89,7 @@ public struct SessionState: Hashable, Sendable, Codable {
         layouts = (try? container.decodeIfPresent([WorkspaceID: SavedLayout].self, forKey: .layouts)) ?? [:]
         layoutOverrides = (try? container.decodeIfPresent([WorkspaceID: LayoutKind].self, forKey: .layoutOverrides)) ?? [:]
         lastFocused = (try? container.decodeIfPresent([WorkspaceID: WindowID].self, forKey: .lastFocused)) ?? [:]
+        fullscreenSpaces = (try? container.decodeIfPresent([WindowID: WorkspaceID].self, forKey: .fullscreenSpaces)) ?? [:]
     }
 }
 
@@ -113,7 +118,8 @@ extension World {
             homes: homes,
             layouts: layouts,
             layoutOverrides: workspaces.compactMapValues(\.layoutOverride),
-            lastFocused: workspaces.compactMapValues(\.lastFocused)
+            lastFocused: workspaces.compactMapValues(\.lastFocused),
+            fullscreenSpaces: fullscreenSpaces
         )
     }
 
@@ -212,7 +218,14 @@ extension World {
         for (id, saved) in state.layouts where workspaces[id] != nil {
             reinstate(saved, on: id, addingOthers: true)
         }
-        for (id, window) in state.lastFocused where windows[window]?.workspace == id {
+        for (window, workspace) in state.fullscreenSpaces where fullscreenSpaces[window] != nil {
+            // Found in fullscreen again: back on the workspace it belonged to.
+            if workspaces[workspace] == nil, let monitor = boundMonitor(for: workspace) ?? focusedMonitorID ?? monitors.first?.id {
+                createWorkspace(workspace, on: monitor)
+            }
+            if workspaces[workspace] != nil { fullscreenSpaces[window] = workspace }
+        }
+        for (id, window) in state.lastFocused where windows[window]?.workspace == id || fullscreenSpaces[window] == id {
             workspaces[id]?.lastFocused = window
         }
         for placement in state.placements {

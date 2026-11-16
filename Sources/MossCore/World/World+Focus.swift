@@ -53,10 +53,15 @@ extension World {
         setFocus(window, reveal: reveal)
     }
 
-    /// Focuses the most appropriate window on `workspace`, or nothing when it is empty.
-    public mutating func restoreFocus(on workspace: WorkspaceID) {
+    /// Focuses the most appropriate window on `workspace`, or nothing when it is empty. With
+    /// `toFullscreenSpace`, that may be a window of the workspace in a fullscreen Space.
+    public mutating func restoreFocus(on workspace: WorkspaceID, toFullscreenSpace: Bool = false) {
         guard let ws = workspaces[workspace] else {
             focusedWindowID = nil
+            return
+        }
+        if toFullscreenSpace, let space = fullscreenSpaceToFocus(on: workspace) {
+            focusFullscreenSpace(space)
             return
         }
         let members = Set(ws.windows)
@@ -70,9 +75,14 @@ extension World {
 
     /// Focus moved because of something outside Moss (a click, Cmd-Tab, an app activating).
     public mutating func handleFocusChange(to window: WindowID?) {
+        if let window, fullscreenSpaces[window] != nil {
+            focusFullscreenSpace(window)
+            refreshDynamicRules()
+            return
+        }
         guard let window, windows[window] != nil else {
-            // Focus went to something Moss does not arrange, such as a window in fullscreen
-            // in a Space of its own. Leave it there instead of taking focus back.
+            // Focus went to something Moss does not arrange, such as a window an application
+            // put over the whole display. Leave it there instead of taking focus back.
             releaseFocus()
             return
         }
@@ -83,7 +93,7 @@ extension World {
 
     /// No arranged window has focus; the display keeps its place as the focused one.
     public mutating func releaseFocus() {
-        guard focusedWindowID != nil else { return }
+        guard focusedWindowID != nil || focusedFullscreenSpace != nil else { return }
         focusedWindowID = nil
         refreshDynamicRules()
     }

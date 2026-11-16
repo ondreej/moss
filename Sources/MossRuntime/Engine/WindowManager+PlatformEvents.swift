@@ -25,7 +25,10 @@ extension WindowManager {
                 activationSwitch = nil
                 effects += (try? world.perform(.moveToWorkspace(.selector(for: launch.from), .id(snapshot.id), follow: true))) ?? []
             }
-            if world.windows[snapshot.id] != nil, world.focusedWindowID != snapshot.id {
+            if snapshot.isFullscreen {
+                // Opened in fullscreen, in a Space of its own, where macOS shows it.
+                enterFullscreen(snapshot.id, ownSpace: true)
+            } else if world.windows[snapshot.id] != nil, world.focusedWindowID != snapshot.id {
                 // Its application will focus it all the same.
                 declinedFocus = declinedFocus.filter { ContinuousClock.now - $0.value < .seconds(1) }
                 declinedFocus[snapshot.id] = .now
@@ -85,7 +88,7 @@ extension WindowManager {
             if minimized { setAside(id) } else { wake([id], onCurrentWorkspace: true) }
 
         case .windowNativeFullscreen(let id, let fullscreen):
-            if fullscreen { enterFullscreen(id) } else { leaveFullscreen(id) }
+            if fullscreen { enterFullscreen(id, ownSpace: true) } else { leaveFullscreen(id) }
 
         case .windowReplacedByFullscreen(let id):
             replaceByFullscreen(id)
@@ -105,11 +108,12 @@ extension WindowManager {
                 }
             }
             if let id, let asked = focusRequests[id], ContinuousClock.now - asked < .seconds(1),
-               world.focusedWindowID != id, world.windows[id] != nil, !world.isVisible(window: id) {
+               world.focusedWindowID != id, isLeftBehind(id) {
                 // Moss focused it, or brought it forward, for a workspace left since, and the
-                // system carried that out late. Focus goes back where it belongs.
+                // system carried that out late, as macOS does at the end of bringing up a
+                // fullscreen Space. Focus goes back where it belongs, or to the desktop.
                 Log.engine.debug("ignoring late focus of \(id.address, privacy: .public), asked for on a workspace left since")
-                appliedFocus = nil
+                appliedFocus = id
                 break
             }
             if let id, let raised = broughtForward[id], ContinuousClock.now - raised < .seconds(1),
@@ -165,15 +169,19 @@ extension WindowManager {
 
         case .applicationTerminated(let pid):
             for window in world.windows.values where window.properties.pid == pid { forget(window.id) }
-            for (id, window) in dormant where window.snapshot.properties.pid == pid { dormant[id] = nil }
+            for (id, window) in dormant where window.snapshot.properties.pid == pid {
+                dormant[id] = nil
+                world.removeFullscreenSpace(id)
+            }
             for (id, window) in replacedByFullscreen where window.snapshot.properties.pid == pid { replacedByFullscreen[id] = nil }
 
         case .applicationHidden(let pid, let hidden):
             if hidden {
                 for window in world.windows.values where window.properties.pid == pid { setAside(window.id) }
             } else {
-                // Shown again: every window goes back to the workspace it was on.
-                wake(dormant.keys.filter { dormant[$0]?.snapshot.properties.pid == pid }, onCurrentWorkspace: false)
+                // Shown again: every window goes back to the workspace it was on, but those
+                // still in fullscreen.
+                wake(dormant.keys.filter { dormant[$0]?.snapshot.properties.pid == pid && world.fullscreenSpaces[$0] == nil }, onCurrentWorkspace: false)
             }
 
         case .displaysChanged(let displays):
@@ -184,10 +192,18 @@ extension WindowManager {
         commit(from: before, effects: effects)
     }
 
+    /// Whether `id` is out of sight of what Moss shows: on a hidden workspace, or in a
+    /// fullscreen Space while another window has focus, which takes the display back.
+    private func isLeftBehind(_ id: WindowID) -> Bool {
+        if world.windows[id] != nil { return !world.isVisible(window: id) }
+        return world.fullscreenSpaces[id] != nil && world.focusedFullscreenSpace != id && world.focusedWindowID != nil
+    }
+
     func forget(_ id: WindowID) {
         if world.windows[id] != nil { lastDeparture = .now }
         animator.cancel(id)
         world.removeWindow(id)
+        world.removeFullscreenSpace(id)
         dormant[id] = nil
         replacedByFullscreen[id] = nil
         coveringWindows.remove(id)
@@ -200,15 +216,15 @@ extension WindowManager {
         if userDrag?.window == id { userDrag = nil }
     }
 
-    /// A window went fullscreen by itself, in a Space of its own or over a whole display. It
-    /// leaves the layout and keeps focus: focusing another window would take the user away.
-    func enterFullscreen(_ id: WindowID) {
+    /// A window went fullscreen by itself, in a Space of its own (`ownSpace`) or over a whole
+    /// display. It leaves the layout and keeps focus: focusing another window would take the
+    /// user away. In a Space of its own, it still belongs to its workspace.
+    func enterFullscreen(_ id: WindowID, ownSpace: Bool = false) {
         let hadFocus = world.focusedWindowID == id
-        setAside(id)
-        if hadFocus {
-            world.releaseFocus()
-            appliedFocus = id
-        }
+        setAside(id, toFullscreenSpace: ownSpace)
+        guard hadFocus else { return }
+        if !ownSpace { world.releaseFocus() }
+        appliedFocus = id
     }
 
     /// The application closed the window for a fullscreen window of its own, which Moss does
@@ -254,8 +270,9 @@ extension WindowManager {
         world.monitors.contains { $0.frame.isApproximatelyEqual(to: frame, tolerance: 2) }
     }
 
-    /// Takes a window out of the layout, remembering where it was.
-    func setAside(_ id: WindowID) {
+    /// Takes a window out of the layout, remembering where it was. With `toFullscreenSpace`,
+    /// it still belongs to its workspace while it is in macOS fullscreen.
+    func setAside(_ id: WindowID, toFullscreenSpace: Bool = false) {
         guard let window = world.windows[id], let placement = world.placement(of: id) else { return }
         lastDeparture = .now
         // A parked window's frame is a corner of the screen; its model frame is the useful one.
@@ -269,7 +286,7 @@ extension WindowManager {
             order: dormantOrder
         )
         animator.cancel(id)
-        world.removeWindow(id)
+        if toFullscreenSpace { world.moveToFullscreenSpace(id) } else { world.removeWindow(id) }
         appliedFrames[id] = nil
         if userDrag?.window == id { userDrag = nil }
     }
@@ -286,8 +303,11 @@ extension WindowManager {
         var layouts: [WorkspaceID: SavedLayout] = [:]
         for (id, window) in returning {
             let snapshot = window.snapshot
+            // Back from a fullscreen Space, to the workspace it belongs to.
+            let workspace = world.removeFullscreenSpace(id)
             world.addWindow(id, properties: snapshot.properties, frame: snapshot.frame, origin: .existing)
             var placement = window.placement
+            if let workspace { placement.workspace = workspace }
             if onCurrentWorkspace, let current = world.activeWorkspaceID { placement.workspace = current }
             placements.append(placement)
             // The first window to leave saw its group and layout whole; later ones saw less.

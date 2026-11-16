@@ -109,7 +109,7 @@ extension World {
         }
         let taken = Set(monitors.map(\.activeWorkspace))
         var number = 1
-        while taken.contains(.numbered(number)) || workspaces[.numbered(number)].map({ !$0.isEmpty }) == true || boundElsewhere(.numbered(number), than: candidate) {
+        while taken.contains(.numbered(number)) || hasWindows(on: .numbered(number)) || boundElsewhere(.numbered(number), than: candidate) {
             number += 1
         }
         return .numbered(number)

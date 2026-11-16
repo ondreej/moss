@@ -163,6 +163,7 @@ public final class WindowManager {
             frame = monitor.usableFrame.centered(snapshot.frame.size)
         }
         world.addWindow(snapshot.id, properties: snapshot.properties, frame: frame, origin: .existing)
+        if snapshot.isFullscreen { enterFullscreen(snapshot.id, ownSpace: true) }
     }
 
     /// Restores every window to a visible position and stops managing them.

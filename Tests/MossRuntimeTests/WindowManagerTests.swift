@@ -705,6 +705,63 @@ struct WindowManagerTests {
         #expect(harness.manager.world.windows[WindowID(2)] != nil)
     }
 
+    @Test func workspacesTakeTheUserToTheirWindowInFullscreen() async throws {
+        let harness = try await Harness(windows: [snapshot(1), snapshot(2)])
+        _ = harness.manager.respond(to: "send-to-workspace 5 id:0x2")
+        _ = harness.manager.respond(to: "workspace 5")
+        harness.manager.handle(PlatformEvent.focusChanged(WindowID(2)))
+        harness.manager.handle(PlatformEvent.windowNativeFullscreen(WindowID(2), true))
+        _ = harness.manager.respond(to: "workspace 1")
+        #expect(harness.system.lastFocused == WindowID(1))
+        harness.manager.handle(PlatformEvent.focusChanged(WindowID(1)))
+
+        // Its workspace brings its Space up.
+        _ = harness.manager.respond(to: "workspace 5")
+        #expect(harness.system.lastFocused == WindowID(2))
+        #expect(!harness.system.lastFocusLeftInPlace)
+        harness.manager.handle(PlatformEvent.focusChanged(WindowID(2)))
+
+        // Only a window can take the display back from the Space: going to an empty workspace,
+        // the window in the Space keeps the keyboard.
+        let desktop = harness.system.desktopFocusCount
+        _ = harness.manager.respond(to: "workspace 6")
+        #expect(harness.system.desktopFocusCount == desktop)
+        // Activated from a launcher, it shows its workspace again.
+        harness.manager.handle(PlatformEvent.focusChanged(WindowID(2)))
+        #expect(harness.manager.world.activeWorkspaceID == .numbered(5))
+
+        // Passing by on the way to another workspace: macOS may finish bringing the Space up
+        // after the user moved on, and focus goes back where they went.
+        _ = harness.manager.respond(to: "workspace 1")
+        harness.manager.handle(PlatformEvent.focusChanged(WindowID(1)))
+        _ = harness.manager.respond(to: "workspace 5")
+        _ = harness.manager.respond(to: "workspace 1")
+        harness.manager.handle(PlatformEvent.focusChanged(WindowID(1)))
+        let requests = harness.system.focusRequests.count
+        harness.manager.handle(PlatformEvent.focusChanged(WindowID(2)))
+        #expect(harness.manager.world.activeWorkspaceID == .numbered(1))
+        #expect(harness.system.focusRequests.count == requests + 1)
+        #expect(harness.system.lastFocused == WindowID(1))
+        _ = harness.manager.respond(to: "workspace 5")
+
+        // Out of fullscreen, it is back in its workspace's layout, with focus.
+        harness.manager.handle(PlatformEvent.windowNativeFullscreen(WindowID(2), false))
+        #expect(harness.manager.world.windows[WindowID(2)]?.workspace == .numbered(5))
+        #expect(harness.manager.world.focusedWindowID == WindowID(2))
+        #expect(harness.manager.world.fullscreenSpaces.isEmpty)
+    }
+
+    @Test func windowsFoundInFullscreenJoinTheirWorkspaceThere() async throws {
+        var fullscreen = snapshot(2, frame: Rect(x: 0, y: 0, width: 1000, height: 600))
+        fullscreen.isFullscreen = true
+        let harness = try await Harness(windows: [snapshot(1), fullscreen])
+        #expect(harness.manager.world.fullscreenSpaces[WindowID(2)] == .numbered(1))
+        #expect(harness.system.frame(of: WindowID(1)) == Rect(x: 0, y: 0, width: 1000, height: 600))
+        // Closed in its Space, it is gone.
+        harness.manager.handle(PlatformEvent.windowDisappeared(WindowID(2)))
+        #expect(harness.manager.world.fullscreenSpaces.isEmpty)
+    }
+
     @Test func windowsCoveringTheDisplayAreFullscreenOfTheirOwn() async throws {
         let harness = try await Harness(config: "[layout]\ngaps = 0\nmargins = 10\n\n[borders]\nwidth = 0\n", windows: [snapshot(1), snapshot(2)])
         harness.manager.handle(PlatformEvent.focusChanged(WindowID(2)))

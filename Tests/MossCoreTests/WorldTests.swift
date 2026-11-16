@@ -694,6 +694,55 @@ struct WorldTests {
         #expect(stacked.max()! - stacked.min()! <= 1)
     }
 
+    @Test func windowsInFullscreenSpacesStayOnTheirWorkspaces() throws {
+        var world = makeWorld()
+        world.open(1)
+        try world.run("workspace 2")
+        world.open(2)
+        world.moveToFullscreenSpace(2)
+        #expect(world.focusedFullscreenSpace == 2)
+        #expect(world.focusedWindowID == nil)
+        #expect(world.windowCount(on: .numbered(2)) == 1)
+        #expect(world.frame(2) == nil)
+
+        // Its workspace stays while out of sight, and switching to it goes to it.
+        try world.run("workspace 1")
+        #expect(world.focusedWindowID == 1)
+        #expect(world.focusedFullscreenSpace == nil)
+        try world.run("workspace 2")
+        #expect(world.focusedFullscreenSpace == 2)
+
+        // Taking focus from outside shows its workspace.
+        try world.run("workspace 1")
+        world.handleFocusChange(to: 2)
+        #expect(world.activeWorkspaceID == .numbered(2))
+        #expect(world.focusedFullscreenSpace == 2)
+        // Back on the desktop with nothing focused, its workspace takes the user back to it.
+        world.handleFocusChange(to: nil)
+        #expect(world.focusedFullscreenSpace == nil)
+        try world.run("workspace 2")
+        #expect(world.focusedFullscreenSpace == 2)
+
+        // Another window used there since gets focus instead.
+        world.open(3)
+        try world.run("workspace 1")
+        try world.run("workspace 2")
+        #expect(world.focusedWindowID == 3)
+
+        // A restarted session finds it in fullscreen again and puts it back on its workspace.
+        var restarted = makeWorld()
+        restarted.open(2)
+        restarted.moveToFullscreenSpace(2)
+        restarted.restore(try JSONDecoder().decode(SessionState.self, from: JSONEncoder().encode(world.sessionState())))
+        #expect(restarted.fullscreenSpaces[2] == .numbered(2))
+
+        // Closed in its Space, it leaves its workspace, which goes once empty and hidden.
+        world.removeWindow(3)
+        try world.run("workspace 1")
+        world.removeFullscreenSpace(2)
+        #expect(world.workspaces[.numbered(2)] == nil)
+    }
+
     @Test func aRestartedSessionPutsBackLayoutsAndFullscreen() throws {
         var world = makeWorld()
         for id in 1...4 { world.open(WindowID(UInt32(id))) }

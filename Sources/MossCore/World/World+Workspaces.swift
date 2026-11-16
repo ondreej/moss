@@ -57,9 +57,9 @@ extension World {
         }
     }
 
-    /// Destroys a workspace that is empty, hidden and not persistent.
+    /// Destroys a workspace that has no windows, is hidden and is not persistent.
     mutating func removeWorkspaceIfUnused(_ id: WorkspaceID) {
-        guard let workspace = workspaces[id], workspace.isEmpty, !workspace.isPersistent, !isVisible(id) else { return }
+        guard let workspace = workspaces[id], !hasWindows(on: id), !workspace.isPersistent, !isVisible(id) else { return }
         workspaces[id] = nil
         for monitor in monitors.indices where monitors[monitor].activeScratchpad == id {
             monitors[monitor].activeScratchpad = nil
@@ -89,7 +89,7 @@ extension World {
             return cycle(candidates, from: current, by: delta) ?? current ?? .numbered(1)
         case .empty:
             var number = 1
-            while let existing = workspaces[.numbered(number)], !existing.isEmpty { number += 1 }
+            while hasWindows(on: .numbered(number)) { number += 1 }
             return .numbered(number)
         case .last:
             guard let previous = previousWorkspace else { throw .noSuchWorkspace("last") }
@@ -106,8 +106,9 @@ extension World {
 
     // MARK: - Switching
 
-    /// Shows `target` and focuses it. Existing workspaces are shown on their own monitor;
-    /// new ones are created on their bound monitor or on `preferredMonitor`.
+    /// Shows `target` and focuses it, or its window in a fullscreen Space. Existing workspaces
+    /// are shown on their own monitor; new ones are created on their bound monitor or on
+    /// `preferredMonitor`.
     mutating func activate(_ target: WorkspaceID, preferredMonitor: MonitorID? = nil, focus: Bool = true) {
         guard !target.isScratchpad else {
             showScratchpad(target, on: preferredMonitor ?? focusedMonitorID)
@@ -133,7 +134,7 @@ extension World {
 
         if focus {
             focusedMonitorID = monitorID
-            restoreFocus(on: monitors[monitorIndex].activeScratchpad ?? target)
+            restoreFocus(on: monitors[monitorIndex].activeScratchpad ?? target, toFullscreenSpace: true)
         }
         if let previouslyFocused, activeWorkspaceID != previouslyFocused {
             previousWorkspace = previouslyFocused

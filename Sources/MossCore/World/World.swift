@@ -18,7 +18,15 @@ public struct World: Sendable {
     public internal(set) var groups: [GroupID: WindowGroup] = [:]
 
     public internal(set) var focusedMonitorID: MonitorID?
-    public internal(set) var focusedWindowID: WindowID?
+    public internal(set) var focusedWindowID: WindowID? {
+        // A window in the layout taking focus, or nothing, takes it from a fullscreen Space.
+        didSet { focusedFullscreenSpace = nil }
+    }
+    /// Windows in macOS fullscreen, each in a Space of its own outside every layout, with the
+    /// workspace each still belongs to.
+    public internal(set) var fullscreenSpaces: [WindowID: WorkspaceID] = [:]
+    /// The window in a fullscreen Space that has focus. `focusedWindowID` is then `nil`.
+    public internal(set) var focusedFullscreenSpace: WindowID?
     /// Names given with `rename-workspace`.
     public internal(set) var workspaceLabels: [WorkspaceID: String] = [:]
 
@@ -50,9 +58,14 @@ public struct World: Sendable {
 
     public func monitor(_ id: MonitorID) -> Monitor? { monitors.first { $0.id == id } }
 
-    /// How many windows are on a workspace, tabs out of sight included.
+    /// How many windows are on a workspace, tabs out of sight and fullscreen Spaces included.
     public func windowCount(on workspace: WorkspaceID) -> Int {
-        windows.values.count { $0.workspace == workspace }
+        windows.values.count { $0.workspace == workspace } + fullscreenSpaces.values.count { $0 == workspace }
+    }
+
+    /// Whether any window is on a workspace, in its layout or in a fullscreen Space.
+    public func hasWindows(on workspace: WorkspaceID) -> Bool {
+        workspaces[workspace].map { !$0.isEmpty } == true || fullscreenSpaces.values.contains(workspace)
     }
 
     public var focusedMonitor: Monitor? { focusedMonitorID.flatMap(monitor) }

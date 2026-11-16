@@ -8,11 +8,14 @@ public struct WindowSnapshot: Hashable, Sendable {
     public var id: WindowID
     public var properties: WindowProperties
     public var frame: Rect
+    /// In macOS fullscreen, in a Space of its own.
+    public var isFullscreen: Bool
 
-    public init(id: WindowID, properties: WindowProperties, frame: Rect) {
+    public init(id: WindowID, properties: WindowProperties, frame: Rect, isFullscreen: Bool = false) {
         self.id = id
         self.properties = properties
         self.frame = frame
+        self.isFullscreen = isFullscreen
     }
 }
 

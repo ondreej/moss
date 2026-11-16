@@ -106,7 +106,9 @@ final class Session {
     }
 
     func closeAll() {
-        let pids = Set((try? windows().filter { $0.bundleID.contains("WindowFactory") }.map(\.pid)) ?? [])
+        // Every factory process, those whose windows Moss does not list, as in fullscreen, too.
+        let running = NSWorkspace.shared.runningApplications.filter { $0.bundleIdentifier?.contains("WindowFactory") == true }.map(\.processIdentifier)
+        let pids = Set((try? windows().filter { $0.bundleID.contains("WindowFactory") }.map(\.pid)) ?? []).union(running)
         for pid in pids { kill(pid, SIGTERM) }
         spawned.forEach { $0.terminate() }
         spawned.removeAll()
@@ -176,6 +178,18 @@ final class Session {
         let order = list.compactMap { ($0[kCGWindowNumber as String] as? UInt32).map { "0x" + String($0, radix: 16) } }
         guard let upperIndex = order.firstIndex(of: upper), let lowerIndex = order.firstIndex(of: lower) else { return false }
         return upperIndex < lowerIndex
+    }
+
+    /// Makes an application the active one, as launchers do.
+    static func activate(_ pid: pid_t) {
+        AXUIElementSetAttributeValue(AXUIElementCreateApplication(pid), kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+    }
+
+    /// Whether the window is on screen in the Space shown, as opposed to another Space.
+    static func isShown(_ address: String) -> Bool {
+        guard let id = UInt32(address.dropFirst(2), radix: 16),
+              let info = (CGWindowListCopyWindowInfo([.optionIncludingWindow], CGWindowID(id)) as? [[String: Any]])?.first else { return false }
+        return info[kCGWindowIsOnscreen as String] as? Bool ?? false
     }
 
     /// Whether the application shows a window above `level`, as the bubble beside the text
@@ -396,6 +410,61 @@ let scenarios: [Scenario] = [
         let fixed = try s.open("fixed", kind: "fixed", size: "320x240")[0]
         try s.expect(dialog.isFloating, "dialog is tiled")
         try s.expect(fixed.isFloating, "fixed-size window is tiled")
+    },
+
+    Scenario(name: "a window in macOS fullscreen stays on its workspace") { s in
+        // macOS fullscreen puts a window in a Space of its own. Its workspace takes the user
+        // there, and the other workspaces with windows back to the desktop.
+        let desk = try s.open("desk")[0]
+        let movie = try s.open("movie", kind: "fullscreen")[0]
+        func spaceShows(_ what: String) throws {
+            try s.waitUntil("its Space to show \(what)") { Session.isShown(movie.id) && !Session.isShown(desk.id) }
+        }
+        func desktopShows(_ what: String) throws {
+            try s.waitUntil("the desktop to show \(what)") { !Session.isShown(movie.id) }
+        }
+        try s.run("send-to-workspace 5 id:\(movie.id)")
+        try s.run("workspace 5")
+        try s.waitUntil("the movie window to have focus") { try s.focused()?.id == movie.id }
+        kill(movie.pid, SIGUSR1)
+        try s.waitUntil("the movie window to leave the layout") { try !s.windows().contains { $0.id == movie.id } }
+        try spaceShows("for fullscreen")
+        let five = try s.query("workspaces", as: [WorkspaceInfo].self).first { $0.workspace == "5" }
+        try s.expect(five?.windows == 1, "workspace 5 has \(five.map { String($0.windows) } ?? "no") windows")
+
+        try s.run("workspace 1")
+        try desktopShows("for workspace 1")
+        try s.waitUntil("the desk window to have focus") { try s.focused()?.id == desk.id }
+        try s.run("workspace 5")
+        try spaceShows("for workspace 5")
+        try s.waitUntil("the movie application to be active") { Session.activeApplication() == movie.pid }
+        try s.run("workspace 1")
+        try desktopShows("for workspace 1 again")
+
+        // Passing by its workspace quickly, the user ends up where they went.
+        try s.run("workspace 5")
+        Thread.sleep(forTimeInterval: 0.15)
+        try s.run("workspace 1")
+        Thread.sleep(forTimeInterval: 1.5)
+        try desktopShows("after passing by")
+        try s.expect(Session.isShown(desk.id), "the desk window is out of sight")
+        let focused = try s.focusedWorkspace()
+        try s.expect(focused == "1", "workspace \(focused ?? "none") is focused, not 1")
+
+        // Activated from a launcher, it shows its workspace again.
+        Session.activate(movie.pid)
+        try spaceShows("from a launcher")
+        try s.waitUntil("workspace 5 to be focused, not \(String(describing: try? s.focusedWorkspace()))") { try s.focusedWorkspace() == "5" }
+        Thread.sleep(forTimeInterval: 1)
+        try s.run("workspace 1")
+        try desktopShows("after the launcher")
+
+        // Out of fullscreen, it is back in its workspace's layout.
+        try s.run("workspace 5")
+        try spaceShows("once more")
+        kill(movie.pid, SIGUSR1)
+        try s.waitUntil("the movie window to be back on workspace 5") { try s.windows().first { $0.id == movie.id }?.workspace == "5" }
+        try s.waitUntil("the movie window to have focus once back") { try s.focused()?.id == movie.id }
     },
 
     Scenario(name: "scratchpads drop down over the workspace") { s in

@@ -195,7 +195,7 @@ final class AppAgent: @unchecked Sendable {
         // Return already tracked windows too, so repeated discovery is complete.
         for (id, element) in windows where !snapshots.contains(where: { $0.id == id }) && !unannounced.contains(id) {
             if let frame = element.frame, let kind = kinds[id] {
-                snapshots.append(WindowSnapshot(id: id, properties: properties(of: element, kind: kind), frame: frame))
+                snapshots.append(WindowSnapshot(id: id, properties: properties(of: element, kind: kind), frame: frame, isFullscreen: nativeFullscreen.contains(id)))
             }
         }
         return snapshots
@@ -243,13 +243,9 @@ final class AppAgent: @unchecked Sendable {
             unannounced.insert(id)
             return nil
         }
-        if element.isFullscreen {
-            // In fullscreen in a Space of its own: it joins the layout once it leaves fullscreen.
-            nativeFullscreen.insert(id)
-            unannounced.insert(id)
-            return nil
-        }
-        return WindowSnapshot(id: id, properties: properties(of: element, kind: kind), frame: frame)
+        let isFullscreen = element.isFullscreen
+        if isFullscreen { nativeFullscreen.insert(id) }
+        return WindowSnapshot(id: id, properties: properties(of: element, kind: kind), frame: frame, isFullscreen: isFullscreen)
     }
 
     private func properties(of element: AXElement, kind: WindowProperties.Kind) -> WindowProperties {
@@ -332,16 +328,7 @@ final class AppAgent: @unchecked Sendable {
             }
 
         case kAXMovedNotification, kAXResizedNotification:
-            guard let id = id(of: element), let frame = element.frame else { return }
-            if unannounced.contains(id) {
-                // A window that appeared in fullscreen is announced when it leaves fullscreen.
-                guard nativeFullscreen.contains(id), !element.isFullscreen, let kind = kinds[id] else { return }
-                nativeFullscreen.remove(id)
-                unannounced.remove(id)
-                knownFrames[id] = frame
-                emit(.windowAppeared(WindowSnapshot(id: id, properties: properties(of: element, kind: kind), frame: frame)))
-                return
-            }
+            guard let id = id(of: element), !unannounced.contains(id), let frame = element.frame else { return }
             knownFrames[id] = frame
             let isFullscreen = element.isFullscreen
             if isFullscreen != nativeFullscreen.contains(id) {

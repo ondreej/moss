@@ -2,11 +2,12 @@ import AppKit
 
 /// Opens test windows for the end-to-end suite.
 ///
-///     WindowFactory --tag NAME [--count N] [--kind standard|dialog|fixed|video|text|notice]
+///     WindowFactory --tag NAME [--count N] [--kind standard|dialog|fixed|video|fullscreen|text|notice]
 ///                   [--size WxH] [--min WxH] [--level N]
 ///
 /// Window titles are `NAME 1`, `NAME 2`, … so the suite can find them. A `video` window goes
-/// fullscreen and back on SIGUSR1, the way browsers show video in fullscreen. A `text`
+/// fullscreen and back on SIGUSR1, the way browsers show video in fullscreen; a `fullscreen`
+/// window goes into macOS fullscreen, in a Space of its own, and back. A `text`
 /// window holds a text view with the cursor in it. A `notice` window puts up a notice over
 /// everything on SIGUSR1, as keyboard utilities show "Caps Lock On". `--level` raises the
 /// windows above others, as launchers do.
@@ -66,7 +67,7 @@ final class Factory: NSObject, NSApplicationDelegate {
             window.makeKeyAndOrderFront(nil)
             windows.append(window)
         }
-        if options.kind == "video" || options.kind == "notice" {
+        if ["video", "fullscreen", "notice"].contains(options.kind) {
             signal(SIGUSR1, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
             source.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.signalled() } }
@@ -77,7 +78,11 @@ final class Factory: NSObject, NSApplicationDelegate {
     }
 
     func signalled() {
-        if options.kind == "video" { toggleFullscreen() } else { showNotice() }
+        switch options.kind {
+        case "video": toggleFullscreen()
+        case "fullscreen": windows.first?.toggleFullScreen(nil)
+        default: showNotice()
+        }
     }
 
     /// Keyboard utilities show "Caps Lock On" in an untitled window over everything, without

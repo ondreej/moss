@@ -233,6 +233,11 @@ extension World {
             return
         }
         if target == activeWorkspaceID {
+            if focusedWindowID == nil, focusedFullscreenSpace == nil, let space = fullscreenSpaceToFocus(on: target) {
+                // Back to the window in a fullscreen Space from its workspace.
+                focusFullscreenSpace(space)
+                return
+            }
             guard settings.workspaces.backAndForth, let previous = previousWorkspace else { return }
             target = previous
         }
