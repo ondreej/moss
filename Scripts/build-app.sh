@@ -1,19 +1,26 @@
 #!/bin/sh
 # Builds Moss.app into ./build.
 #
-#   Scripts/build-app.sh [debug|release]
+#   Scripts/build-app.sh [debug|release] [--universal]
+#
+# --universal builds for both Apple silicon and Intel Macs.
 #
 # Set MOSS_SIGNING_IDENTITY to sign with a certificate; otherwise the bundle is
 # signed ad hoc. A stable identity keeps the Accessibility permission across rebuilds.
 set -eu
 
 configuration="${1:-release}"
+architectures=""
+if [ "${2:-}" = "--universal" ]; then
+    architectures="--arch arm64 --arch x86_64"
+fi
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
-swift build -c "$configuration" --product Moss
-swift build -c "$configuration" --product MossCLI
-binaries="$(swift build -c "$configuration" --show-bin-path)"
+# $architectures is left unquoted so that it splits into separate arguments.
+swift build -c "$configuration" $architectures --product Moss
+swift build -c "$configuration" $architectures --product MossCLI
+binaries="$(swift build -c "$configuration" $architectures --show-bin-path)"
 
 app="build/Moss.app"
 rm -rf "$app"

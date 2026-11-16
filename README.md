@@ -25,14 +25,39 @@ file or a settings window, and script it from the command line.
   comments in your configuration file.
 - **Each app gets its own accessibility thread**, so a frozen app never stalls the others.
 
-## Building
+## Installing
 
-Requires macOS 26 and Swift 6.2 (Xcode 26) or later.
+Requires macOS 26 or later.
+
+1. Download `Moss-<version>.zip` from the [latest release](https://github.com/ondreej/moss/releases/latest)
+   and unzip it.
+2. Move `Moss.app` to Applications and open it.
+3. Moss is not notarized by Apple, so macOS refuses to open it the first time. Click **Done**,
+   then click **Open Anyway** in System Settings › Privacy & Security.
+
+Instead of step 3, you can clear the download flag in Terminal before opening Moss:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Moss.app
+```
+
+The [`moss` command](docs/cli.md) is inside the app; link it onto your `PATH` to use it.
+
+To update, quit Moss and replace the app. Every version has a signature of its own, so macOS
+no longer recognizes the Accessibility access you gave the old one, even though its switch stays
+on. Remove Moss from System Settings › Privacy & Security › Accessibility with −, then allow it
+again.
+
+### Building from source
+
+Requires Swift 6.2 (Xcode 26) or later.
 
 ```sh
 Scripts/build-app.sh
 open build/Moss.app
 ```
+
+`Scripts/release.sh` publishes the pushed commit as a GitHub release.
 
 ## Getting started
 

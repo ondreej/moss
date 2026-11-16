@@ -18,7 +18,7 @@ struct OverviewPage: View {
                         Image(systemName: "hand.raised.fill").font(.title2).foregroundStyle(.orange)
                         VStack(alignment: .leading) {
                             Text("Accessibility access is needed").font(.headline)
-                            Text("Moss moves and resizes windows through the accessibility API. Allow it in System Settings › Privacy & Security › Accessibility.")
+                            Text("Moss moves and resizes windows through the accessibility API. Allow it in System Settings › Privacy & Security › Accessibility. After an update, remove Moss from that list with − and allow it again.")
                                 .font(.callout).foregroundStyle(.secondary)
                         }
                         Spacer()
