@@ -900,6 +900,33 @@ struct WindowManagerTests {
         #expect(manager.world.windows[WindowID(1)]?.workspace == .numbered(3))
     }
 
+    @Test func behindALockedScreenTheSessionWaitsForTheWindows() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("moss-session-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let sessionFile = directory.appendingPathComponent("session.json")
+        let saved = SessionState(placements: [SessionState.Placement(window: WindowID(1), workspace: .numbered(3), isFloating: false, floatingFrame: .zero, isPinned: false)])
+        try JSONEncoder().encode(saved).write(to: sessionFile)
+        let system = FakeWindowSystem(windows: [snapshot(1)])
+        system.state.withLock { $0.isLocked = true }
+        let manager = WindowManager(
+            windowSystem: system,
+            input: FakeInputSystem(),
+            decorations: FakeDecorations(),
+            notices: FakeNotices(),
+            store: ConfigurationStore(mainFile: try configurationFile("animation.enabled = false\n")),
+            sessionFile: sessionFile
+        )
+        let started = Task { await manager.start() }
+        try await Task.sleep(for: .milliseconds(100))
+        // A locked screen hides the windows: none is found, and the session is kept.
+        #expect(manager.world.windows.isEmpty)
+        manager.saveSession()
+        #expect(try JSONDecoder().decode(SessionState.self, from: Data(contentsOf: sessionFile)) == saved)
+        system.state.withLock { $0.isLocked = false }
+        await started.value
+        #expect(manager.world.windows[WindowID(1)]?.workspace == .numbered(3))
+    }
+
     @Test func shutdownLeavesFullscreenWindowsClearOfReservedSpace() async throws {
         let harness = try await Harness(config: "[layout]\ngaps = 0\nmargins = 0\n\n[displays.all]\nreserve = [30, 0, 0, 0]\n", windows: [snapshot(1), snapshot(2)])
         _ = harness.manager.respond(to: "move-to-workspace 2 id:0x2")

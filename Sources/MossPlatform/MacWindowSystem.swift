@@ -193,6 +193,20 @@ public final class MacWindowSystem: WindowSystem, @unchecked Sendable {
     /// application must not hold up the rest; its windows are reported when it answers.
     private static let discoveryDeadline = Duration.seconds(2)
 
+    /// How often a locked screen is looked at again.
+    private static let lockCheckInterval = Duration.milliseconds(500)
+
+    public func waitUntilUnlocked() async {
+        guard Self.isScreenLocked else { return }
+        Log.platform.info("the screen is locked: windows are listed once it is unlocked")
+        while Self.isScreenLocked { try? await Task.sleep(for: Self.lockCheckInterval) }
+    }
+
+    /// Whether the screen is locked, which hides every window from the accessibility API.
+    private static var isScreenLocked: Bool {
+        (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool ?? false
+    }
+
     public func discoverWindows() async -> [WindowSnapshot] {
         let adopted = await MainActor.run {
             NSWorkspace.shared.runningApplications.compactMap { self.adopt($0, announce: false) }

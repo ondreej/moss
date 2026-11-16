@@ -141,6 +141,9 @@ public final class WindowManager {
             appendDiagnostic("input monitoring could not start: \(error)")
         }
 
+        // Behind a locked screen no window can be found, and the session would be restored,
+        // and then saved, without any.
+        await windowSystem.waitUntilUnlocked()
         for snapshot in await windowSystem.discoverWindows() { adoptExisting(snapshot) }
         if let session { world.restore(session) }
         // Windows of hidden applications wait outside the layout until they are shown.

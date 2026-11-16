@@ -19,6 +19,7 @@ final class FakeWindowSystem: WindowSystem, @unchecked Sendable {
         var isStopped = false
         var signals: [(pid: Int32, signal: Int32)] = []
         var hiddenApplications: Set<Int32> = []
+        var isLocked = false
     }
 
     let state = Mutex(State())
@@ -50,6 +51,9 @@ final class FakeWindowSystem: WindowSystem, @unchecked Sendable {
     }
 
     func displays() -> [DisplayDescription] { displayList }
+    func waitUntilUnlocked() async {
+        while state.withLock(\.isLocked) { try? await Task.sleep(for: .milliseconds(10)) }
+    }
     func discoverWindows() async -> [WindowSnapshot] { state.withLock { Array($0.windows.values).sorted { $0.id < $1.id } } }
     func hiddenApplications() -> Set<Int32> { state.withLock(\.hiddenApplications) }
 

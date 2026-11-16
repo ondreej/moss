@@ -57,6 +57,9 @@ public protocol WindowSystem: AnyObject, Sendable {
     func stop()
 
     func displays() -> [DisplayDescription]
+    /// Returns once the screen is unlocked, at once when it is not locked. A locked screen
+    /// hides every window.
+    func waitUntilUnlocked() async
     /// Every manageable window that currently exists. Applications that are slow to answer
     /// may report theirs later as `windowDiscovered` events.
     func discoverWindows() async -> [WindowSnapshot]
