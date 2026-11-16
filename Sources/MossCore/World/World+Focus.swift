@@ -27,6 +27,18 @@ extension World {
         workspaces[workspace]?.tiling.reveal(window, area: area, settings: settings)
     }
 
+    /// Whether focusing `window` brings it to the front. Floating windows stay above the tiles:
+    /// a tile that one of them overlaps takes focus where it is in the stacking order, unless
+    /// it is fullscreen.
+    public func raisesOnFocus(_ id: WindowID, in arrangement: Arrangement) -> Bool {
+        guard let window = windows[id], window.isTiled, window.fullscreen == nil, !window.workspace.isScratchpad,
+              let frame = arrangement.frames[id] else { return true }
+        return !arrangement.stack.contains { other in
+            guard other != id, let above = windows[other], above.isFloating || above.workspace.isScratchpad else { return false }
+            return arrangement.frames[other]?.intersects(frame) == true
+        }
+    }
+
     /// Focuses `window`, switching to its workspace first when it is hidden.
     mutating func focus(_ window: WindowID, reveal: Bool = true) {
         if isStashed(window) { activateGroupMember(window) }

@@ -9,6 +9,8 @@ final class FakeWindowSystem: WindowSystem, @unchecked Sendable {
         var windows: [WindowID: WindowSnapshot] = [:]
         var frameRequests: [[WindowID: Rect]] = []
         var focused: [WindowID] = []
+        /// Windows focused without being raised, left where they are in the stacking order.
+        var focusedInPlace: Set<WindowID> = []
         var broughtForward: [[WindowID]] = []
         var desktopFocused = 0
         var closed: [WindowID] = []
@@ -60,12 +62,12 @@ final class FakeWindowSystem: WindowSystem, @unchecked Sendable {
     }
 
     func drain() async {}
-    func focus(_ window: WindowID) { state.withLock { $0.focused.append(window) } }
+    func focus(_ window: WindowID, raise: Bool) { state.withLock { $0.recordFocus(window, raise: raise) } }
     func focusDesktop() { state.withLock { $0.desktopFocused += 1 } }
-    func focus(_ window: WindowID, after others: [WindowID]) {
+    func focus(_ window: WindowID, raise: Bool, after others: [WindowID]) {
         state.withLock { state in
             state.broughtForward.append(others)
-            state.focused.append(window)
+            state.recordFocus(window, raise: raise)
         }
     }
     func close(_ window: WindowID) { state.withLock { $0.closed.append(window) } }
@@ -81,6 +83,8 @@ final class FakeWindowSystem: WindowSystem, @unchecked Sendable {
 
     func frame(of id: WindowID) -> Rect? { state.withLock { $0.windows[id]?.frame } }
     var lastFocused: WindowID? { state.withLock(\.focused.last) }
+    /// Whether the last focus request left the window where it was in the stacking order.
+    var lastFocusLeftInPlace: Bool { state.withLock { $0.focused.last.map($0.focusedInPlace.contains) ?? false } }
     var focusRequests: [WindowID] { state.withLock(\.focused) }
     var broughtForward: [[WindowID]] { state.withLock(\.broughtForward) }
     var desktopFocusCount: Int { state.withLock(\.desktopFocused) }
@@ -217,5 +221,12 @@ struct Harness {
             publish: { log.record($0) }
         )
         await manager.start()
+    }
+}
+
+extension FakeWindowSystem.State {
+    mutating func recordFocus(_ window: WindowID, raise: Bool) {
+        focused.append(window)
+        if raise { focusedInPlace.remove(window) } else { focusedInPlace.insert(window) }
     }
 }

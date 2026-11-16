@@ -113,10 +113,11 @@ extension WindowManager {
             focusRequests = focusRequests.filter { ContinuousClock.now - $0.value < .seconds(2) }
             for window in others + [focused] { focusRequests[window] = .now }
             broughtForward = focusRequests.filter { others.contains($0.key) }
+            let raise = world.raisesOnFocus(focused, in: arrangement)
             if others.isEmpty {
-                windowSystem.focus(focused)
+                windowSystem.focus(focused, raise: raise)
             } else {
-                windowSystem.focus(focused, after: others)
+                windowSystem.focus(focused, raise: raise, after: others)
             }
             decorations.restack()
         } else if world.focusedWindowID == nil, let previous = appliedFocus, dormant[previous] == nil,

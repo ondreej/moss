@@ -64,11 +64,13 @@ public protocol WindowSystem: AnyObject, Sendable {
     func setFrames(_ frames: [WindowID: Rect])
     /// Waits until previously requested window operations have been carried out.
     func drain() async
-    func focus(_ window: WindowID)
+    /// Focuses `window`, bringing it to the front with `raise`, or leaving it where it is in the
+    /// stacking order, below the windows over it.
+    func focus(_ window: WindowID, raise: Bool)
     /// Focuses `others` one after another, bottom to top, then `window`. macOS brings another
     /// application's window to the front only by focusing it, so this is how windows coming
     /// into view are put above the ones already there.
-    func focus(_ window: WindowID, after others: [WindowID])
+    func focus(_ window: WindowID, raise: Bool, after others: [WindowID])
     /// Focuses the desktop, as a click on it does, when no window in view is to have focus.
     func focusDesktop()
     func close(_ window: WindowID)

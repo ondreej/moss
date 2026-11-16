@@ -427,6 +427,31 @@ struct WindowManagerTests {
         #expect(tileFocused.withLock { $0 })
     }
 
+    @Test func tilesTakeFocusBelowTheFloatingWindows() async throws {
+        let harness = try await Harness(windows: [snapshot(1), snapshot(2)])
+        // With nothing floating over it, a tile comes to the front as usual.
+        _ = harness.manager.respond(to: "focus-window id:0x2")
+        _ = harness.manager.respond(to: "focus-window id:0x1")
+        #expect(harness.system.lastFocused == WindowID(1))
+        #expect(!harness.system.lastFocusLeftInPlace)
+        // Floating windows come forward when focused.
+        _ = harness.manager.respond(to: "float id:0x2")
+        _ = harness.manager.respond(to: "focus-window id:0x2")
+        #expect(harness.system.lastFocused == WindowID(2))
+        #expect(!harness.system.lastFocusLeftInPlace)
+        // The tile under one takes focus where it is.
+        _ = harness.manager.respond(to: "focus-window id:0x1")
+        #expect(harness.system.lastFocused == WindowID(1))
+        #expect(harness.system.lastFocusLeftInPlace)
+        // A fullscreen tile goes above them.
+        _ = harness.manager.respond(to: "focus-window id:0x1")
+        _ = harness.manager.respond(to: "fullscreen")
+        _ = harness.manager.respond(to: "focus-window id:0x2")
+        _ = harness.manager.respond(to: "focus-window id:0x1")
+        #expect(harness.system.lastFocused == WindowID(1))
+        #expect(!harness.system.lastFocusLeftInPlace)
+    }
+
     @Test func floatingWindowsComingIntoViewAreBroughtAboveTheTiles() async throws {
         let harness = try await Harness(windows: [snapshot(1), snapshot(2), snapshot(3)])
         _ = harness.manager.respond(to: "float on id:0x3")

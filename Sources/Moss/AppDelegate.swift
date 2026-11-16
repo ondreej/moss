@@ -84,6 +84,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        // Moss also becomes active for a moment to pass focus between windows of another app.
+        guard !FocusRelay.isPassing else { return }
         settings.applicationDidBecomeActive()
     }
 

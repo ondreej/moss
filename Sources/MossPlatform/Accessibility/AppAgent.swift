@@ -537,15 +537,16 @@ final class AppAgent: @unchecked Sendable {
         }
     }
 
-    /// Focuses a window, unless by the time the application gets to it the request has
-    /// `expired`.
-    func focus(_ id: WindowID, unless expired: @escaping @Sendable () -> Bool = { false }) {
+    /// Focuses a window, bringing it to the front with `raise`, unless by the time the
+    /// application gets to it the request has `expired`.
+    func focus(_ id: WindowID, raise: Bool, unless expired: @escaping @Sendable () -> Bool = { false }) {
         perform { [self] in
             guard !expired(), let element = windows[id] else { return }
-            if !PrivateAPI.focus(window: CGWindowID(id.rawValue), pid: pid) {
+            if !PrivateAPI.focus(window: CGWindowID(id.rawValue), pid: pid, raise: raise) {
+                // Activating the application brings all its windows forward.
                 NSRunningApplication(processIdentifier: pid)?.activate()
             }
-            element.perform(kAXRaiseAction)
+            if raise { element.perform(kAXRaiseAction) }
         }
     }
 

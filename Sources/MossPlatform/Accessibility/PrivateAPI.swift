@@ -21,9 +21,11 @@ enum PrivateAPI {
     /// Maps an accessibility window element to its window server identifier.
     static let getWindow = symbol("_AXUIElementGetWindow", in: applicationServices, as: GetWindow.self)
     static let getProcessForPID = symbol("GetProcessForPID", in: applicationServices, as: GetProcessForPID.self)
-    /// Brings a process to the front with a specific window, without raising its other windows.
+    /// Makes a process the active one with a specific window, without raising its other windows.
     static let setFrontProcess = symbol("_SLPSSetFrontProcessWithOptions", in: skyLight, as: SetFrontProcess.self)
     static let postEventRecord = symbol("SLPSPostEventRecordTo", in: skyLight, as: PostEventRecord.self)
+    typealias GetFrontProcess = @convention(c) (UnsafeMutablePointer<ProcessSerialNumber>) -> CGError
+    static let getFrontProcess = symbol("_SLPSGetFrontProcess", in: skyLight, as: GetFrontProcess.self)
 
     typealias MainConnection = @convention(c) () -> Int32
     typealias QueryWindows = @convention(c) (Int32, CFArray, UInt32) -> Unmanaged<CFTypeRef>?
@@ -50,14 +52,29 @@ enum PrivateAPI {
         return radii.max()
     }
 
-    /// Makes `window` the key window of process `pid` and brings it to the front.
+    /// How long, in microseconds, Moss holds the front when it passes focus on.
+    private static let relayPause: useconds_t = 20_000
+
+    /// Makes `window` the key window of process `pid`, bringing it to the front with `raise`
+    /// and otherwise leaving every window where it is in the stacking order.
     /// Returns `false` when the private functions are unavailable.
-    static func focus(window: CGWindowID, pid: pid_t) -> Bool {
+    static func focus(window: CGWindowID, pid: pid_t, raise: Bool) -> Bool {
         guard let getProcessForPID, let setFrontProcess, let postEventRecord else { return false }
         var psn = ProcessSerialNumber()
         guard getProcessForPID(pid, &psn) == noErr else { return false }
         let userGenerated: UInt32 = 0x200
-        guard setFrontProcess(&psn, window, userGenerated) == .success else { return false }
+        let noWindows: UInt32 = 0x400
+        if !raise, isFront(psn) {
+            // An active application moves its key window only by raising it. Made active anew,
+            // it takes the window it is given where it is, so Moss takes the front for a moment.
+            var own = ProcessSerialNumber()
+            guard getProcessForPID(getpid(), &own) == noErr else { return false }
+            FocusRelay.pass()
+            guard setFrontProcess(&own, 0, noWindows) == .success else { return false }
+            // The application must have let go before it is made active again.
+            usleep(relayPause)
+        }
+        guard setFrontProcess(&psn, window, raise ? userGenerated : noWindows) == .success else { return false }
 
         // Synthesise the window server events that make the window key.
         var record = [UInt8](repeating: 0, count: 0xF8)
@@ -72,5 +89,11 @@ enum PrivateAPI {
         record[0x08] = 0x02
         _ = postEventRecord(&psn, &record)
         return true
+    }
+
+    private static func isFront(_ psn: ProcessSerialNumber) -> Bool {
+        var front = ProcessSerialNumber()
+        guard let getFrontProcess, getFrontProcess(&front) == .success else { return false }
+        return front.highLongOfPSN == psn.highLongOfPSN && front.lowLongOfPSN == psn.lowLongOfPSN
     }
 }

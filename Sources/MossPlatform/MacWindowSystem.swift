@@ -246,12 +246,12 @@ public final class MacWindowSystem: WindowSystem, @unchecked Sendable {
         }
     }
 
-    public func focus(_ window: WindowID) {
+    public func focus(_ window: WindowID, raise: Bool) {
         focusRequests.add(1, ordering: .relaxed)
-        owner(of: window)?.focus(window)
+        owner(of: window)?.focus(window, raise: raise)
     }
 
-    public func focus(_ window: WindowID, after others: [WindowID]) {
+    public func focus(_ window: WindowID, raise: Bool, after others: [WindowID]) {
         let request = focusRequests.add(1, ordering: .relaxed).newValue
         Task {
             // Each waits for the one before, which may be another application's, but not for
@@ -261,12 +261,12 @@ public final class MacWindowSystem: WindowSystem, @unchecked Sendable {
                 guard let agent = owner(of: other) else { continue }
                 // A busy application that gets to it later must not take focus then.
                 let step = Expiry()
-                agent.focus(other, unless: { step.isExpired })
+                agent.focus(other, raise: true, unless: { step.isExpired })
                 await Self.waitBriefly(for: agent)
                 step.expire()
             }
             guard focusRequests.load(ordering: .relaxed) == request else { return }
-            owner(of: window)?.focus(window)
+            owner(of: window)?.focus(window, raise: raise)
         }
     }
 
@@ -279,7 +279,7 @@ public final class MacWindowSystem: WindowSystem, @unchecked Sendable {
         let desktop = list.first {
             $0[kCGWindowOwnerPID as String] as? pid_t == pid && $0[kCGWindowLayer as String] as? Int == desktopLevel
         }
-        if let number = desktop?[kCGWindowNumber as String] as? UInt32, PrivateAPI.focus(window: CGWindowID(number), pid: pid) { return }
+        if let number = desktop?[kCGWindowNumber as String] as? UInt32, PrivateAPI.focus(window: CGWindowID(number), pid: pid, raise: true) { return }
         finder.activate()
     }
 

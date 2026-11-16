@@ -2,6 +2,10 @@ import AppKit
 import IOKit.hidsystem
 import MossIPC
 
+/// Maps an accessibility window element to its window server identifier.
+@_silgen_name("_AXUIElementGetWindow")
+func _AXUIElementGetWindow(_ element: AXUIElement, _ id: UnsafeMutablePointer<CGWindowID>) -> AXError
+
 // End-to-end tests against a running Moss instance on a real macOS session.
 //
 //     moss-e2e <path to WindowFactory.app> [scenario name filter]
@@ -20,6 +24,10 @@ struct Frame: Equatable, CustomStringConvertible {
     var maxX: Double { x + width }
     var maxY: Double { y + height }
     var description: String { "(\(Int(x)),\(Int(y)) \(Int(width))x\(Int(height)))" }
+
+    func overlaps(_ other: Frame) -> Bool {
+        x < other.maxX && other.x < maxX && y < other.maxY && other.y < maxY
+    }
 
     func close(to other: Frame, tolerance: Double = 3) -> Bool {
         abs(x - other.x) <= tolerance && abs(y - other.y) <= tolerance
@@ -133,6 +141,41 @@ final class Session {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }
         let front = list.first { ($0[kCGWindowLayer as String] as? Int) == 0 && ($0[kCGWindowOwnerName as String] as? String) != "Moss" }
         return front?[kCGWindowOwnerPID as String] as? pid_t
+    }
+
+    /// The process of the active application, the one keys go to, as Launch Services knows it.
+    static func activeApplication() -> pid_t? {
+        func lsappinfo(_ arguments: [String]) -> String {
+            let process = Process()
+            let pipe = Pipe()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/lsappinfo")
+            process.arguments = arguments
+            process.standardOutput = pipe
+            guard (try? process.run()) != nil else { return "" }
+            process.waitUntilExit()
+            return String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        }
+        let front = lsappinfo(["front"]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let info = lsappinfo(["info", "-only", "pid", front])
+        return info.split(separator: "=").last.flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+    }
+
+    /// The window the application's keyboard input goes to, as the accessibility API reports it.
+    static func keyWindow(of pid: pid_t) -> String? {
+        var focused: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(AXUIElementCreateApplication(pid), kAXFocusedWindowAttribute as CFString, &focused) == .success,
+              let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() else { return nil }
+        var id: CGWindowID = 0
+        guard _AXUIElementGetWindow(focused as! AXUIElement, &id) == .success else { return nil }
+        return "0x" + String(id, radix: 16)
+    }
+
+    /// Whether the window server shows window `upper` in front of window `lower`.
+    static func isInFront(_ upper: String, of lower: String) -> Bool {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else { return false }
+        let order = list.compactMap { ($0[kCGWindowNumber as String] as? UInt32).map { "0x" + String($0, radix: 16) } }
+        guard let upperIndex = order.firstIndex(of: upper), let lowerIndex = order.firstIndex(of: lower) else { return false }
+        return upperIndex < lowerIndex
     }
 
     /// Whether the application shows a window above `level`, as the bubble beside the text
@@ -320,6 +363,32 @@ let scenarios: [Scenario] = [
         try s.expect(managed == [notifier.title], "Moss manages \(managed), not just \(notifier.title)")
         try s.expect(try s.focused()?.id == typing.id, "focus moved to \(String(describing: try? s.focused()?.title))")
         try s.expect(Session.frontmostOwner() == typing.pid, "the notice's app came to the front")
+    },
+
+    Scenario(name: "floating windows stay above the tiles") { s in
+        // A tile that a floating window overlaps takes focus where it is in the stacking order,
+        // so the floating window of another application is not buried under it: coming from
+        // that window, and coming from another window of the tile's own application.
+        let tiles = try s.open("tile", count: 2)
+        let floating = try s.open("floating", kind: "dialog", size: "300x200")[0]
+        try s.expect(floating.isFloating, "the dialog is tiled")
+        let over = Session.frame(of: floating)
+        guard let covered = tiles.first(where: { Session.frame(of: $0).overlaps(over) }),
+              let other = tiles.first(where: { $0.id != covered.id }) else {
+            throw Failure("the floating window at \(over) is over no tile: \(tiles.map(Session.frame))")
+        }
+        try s.waitUntil("the floating window in front") { Session.isInFront(floating.id, of: covered.id) }
+        for from in [floating, other] {
+            try s.run("focus-window id:\(from.id)")
+            try s.waitUntil("\(from.title) to have focus") { try s.focused()?.id == from.id }
+            Thread.sleep(forTimeInterval: 0.3)
+            try s.run("focus-window id:\(covered.id)")
+            try s.waitUntil("\(covered.title) to have focus") { try s.focused()?.id == covered.id }
+            Thread.sleep(forTimeInterval: 0.5)
+            try s.expect(Session.isInFront(floating.id, of: covered.id), "coming from \(from.title), the tile came up over the floating window")
+            try s.expect(Session.activeApplication() == covered.pid, "coming from \(from.title), the tile's application is not active")
+            try s.expect(Session.keyWindow(of: covered.pid) == covered.id, "coming from \(from.title), \(String(describing: Session.keyWindow(of: covered.pid))) has the keyboard, not \(covered.title)")
+        }
     },
 
     Scenario(name: "dialogs and fixed-size windows float") { s in
