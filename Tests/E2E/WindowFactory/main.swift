@@ -2,17 +2,21 @@ import AppKit
 
 /// Opens test windows for the end-to-end suite.
 ///
-///     WindowFactory --tag NAME [--count N] [--kind standard|dialog|fixed|video|text] [--size WxH] [--min WxH]
+///     WindowFactory --tag NAME [--count N] [--kind standard|dialog|fixed|video|text|notice]
+///                   [--size WxH] [--min WxH] [--level N]
 ///
 /// Window titles are `NAME 1`, `NAME 2`, … so the suite can find them. A `video` window goes
 /// fullscreen and back on SIGUSR1, the way browsers show video in fullscreen. A `text`
-/// window holds a text view with the cursor in it.
+/// window holds a text view with the cursor in it. A `notice` window puts up a notice over
+/// everything on SIGUSR1, as keyboard utilities show "Caps Lock On". `--level` raises the
+/// windows above others, as launchers do.
 struct Options {
     var tag = "window"
     var count = 1
     var kind = "standard"
     var size = NSSize(width: 480, height: 320)
     var minimum: NSSize?
+    var level: Int?
 
     init(_ arguments: [String]) {
         var iterator = arguments.makeIterator()
@@ -28,6 +32,7 @@ struct Options {
             case "--kind": kind = iterator.next() ?? kind
             case "--size": size = parseSize(iterator.next()) ?? size
             case "--min": minimum = parseSize(iterator.next())
+            case "--level": level = Int(iterator.next() ?? "")
             default: break
             }
         }
@@ -51,7 +56,8 @@ final class Factory: NSObject, NSApplicationDelegate {
     let options = Options(Array(CommandLine.arguments.dropFirst()))
     var windows: [NSWindow] = []
     var cover: NSWindow?
-    var fullscreenSignal: (any DispatchSourceSignal)?
+    var notice: NSWindow?
+    var signalSource: (any DispatchSourceSignal)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         for index in 1...max(1, options.count) {
@@ -60,14 +66,31 @@ final class Factory: NSObject, NSApplicationDelegate {
             window.makeKeyAndOrderFront(nil)
             windows.append(window)
         }
-        if options.kind == "video" {
+        if options.kind == "video" || options.kind == "notice" {
             signal(SIGUSR1, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
-            source.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.toggleFullscreen() } }
+            source.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.signalled() } }
             source.resume()
-            fullscreenSignal = source
+            signalSource = source
         }
         NSApp.activate()
+    }
+
+    func signalled() {
+        if options.kind == "video" { toggleFullscreen() } else { showNotice() }
+    }
+
+    /// Keyboard utilities show "Caps Lock On" in an untitled window over everything, without
+    /// activating themselves, and raise it to its level a moment after it appears.
+    func showNotice() {
+        notice?.close()
+        let notice = DialogWindow(contentRect: NSRect(x: 0, y: 0, width: 260, height: 212), styleMask: .borderless, backing: .buffered, defer: false)
+        notice.isReleasedWhenClosed = false
+        notice.contentView = LabelView(text: "Caps Lock On")
+        notice.center()
+        notice.orderFrontRegardless()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { notice.level = .screenSaver }
+        self.notice = notice
     }
 
     /// Browsers show a video in fullscreen without a Space of its own by closing the window
@@ -107,6 +130,7 @@ final class Factory: NSObject, NSApplicationDelegate {
         window.isReleasedWhenClosed = false
         window.title = "\(options.tag) \(index)"
         if let minimum = options.minimum { window.contentMinSize = minimum }
+        if let level = options.level { window.level = NSWindow.Level(rawValue: level) }
         if options.kind == "text" {
             let text = NSTextView(frame: rect)
             text.string = window.title

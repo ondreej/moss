@@ -214,18 +214,18 @@ final class AppAgent: @unchecked Sendable {
     }
 
     /// Starts tracking `element` if it is a manageable window. Returns its snapshot when it
-    /// should be announced now (it is not minimized). With `canWait`, a window that may be the
-    /// bubble beside the text cursor is looked at again shortly and announced then.
+    /// should be announced now (it is not minimized). With `canWait`, a window that may be a
+    /// notice over other windows is looked at again shortly and announced then.
     private func track(_ element: AXElement, canWait: Bool = true) -> WindowSnapshot? {
         guard let id = element.windowID, windows[id] == nil, var kind = Self.kind(of: element),
               let frame = element.frame, frame.width >= 40, frame.height >= 40,
               let observer else { return nil }
-        if Self.mayBeCursorBubble(element, kind: kind) {
+        if Self.mayBeNotice(element, kind: kind) {
             if canWait {
                 trackShortly(element)
                 return nil
             }
-            if Self.isCursorBubble(element) { return nil }
+            if Self.isNotice(element) { return nil }
         }
 
         if floatsWindows && kind == .standard { kind = .panel }
@@ -268,29 +268,32 @@ final class AppAgent: @unchecked Sendable {
         return windows.first { $0.value == element }?.key
     }
 
-    // MARK: - The bubble beside the text cursor
+    // MARK: - Notices over other windows
 
-    // While Caps Lock is on, or after the input source changes, macOS shows a bubble beside the
-    // text cursor. It is an untitled dialog of the app being typed in, raised to the floating
-    // level a moment after it appears; real dialogs sit at the normal level or, when modal, the
-    // modal panel level. Focusing the bubble would take the cursor away, which hides it, and
-    // focusing the text again would bring it back.
+    // Some untitled dialogs are notices shown over other windows rather than dialogs: the
+    // bubble macOS puts beside the text cursor while Caps Lock is on or after the input source
+    // changes, or a keyboard utility's "Caps Lock On". They sit above the normal level, and the
+    // bubble one above the window it belongs to, while real dialogs sit at the normal level or,
+    // when modal, the modal panel level. They reach their level a moment after they appear.
+    // Focusing one takes focus from the window being typed in; for the bubble, that hides it,
+    // and focusing the text again brings it back, over and over.
 
-    /// Whether `window` may be the bubble, which only its level tells for sure.
-    private static func mayBeCursorBubble(_ window: AXElement, kind: WindowProperties.Kind) -> Bool {
+    /// Whether `window` may be a notice, which only its level tells for sure.
+    private static func mayBeNotice(_ window: AXElement, kind: WindowProperties.Kind) -> Bool {
         kind == .dialog && (window.title?.isEmpty ?? true) && !window.hasCloseButton
     }
 
-    private static func isCursorBubble(_ window: AXElement) -> Bool {
-        window.windowLevel == Int(CGWindowLevelForKey(.floatingWindow))
+    private static func isNotice(_ window: AXElement) -> Bool {
+        guard let level = window.windowLevel else { return false }
+        return level > Int(CGWindowLevelForKey(.normalWindow)) && level != Int(CGWindowLevelForKey(.modalPanelWindow))
     }
 
-    /// How long a window that may be the bubble is given to reach its level.
-    private static let bubbleDelay: CFTimeInterval = 0.1
+    /// How long a window that may be a notice is given to reach its level.
+    private static let noticeDelay: CFTimeInterval = 0.1
 
     /// Tracks `window` once it has had time to reach its level.
     private func trackShortly(_ window: AXElement) {
-        let timer = CFRunLoopTimerCreateWithHandler(nil, CFAbsoluteTimeGetCurrent() + Self.bubbleDelay, 0, 0, 0) { [weak self] _ in
+        let timer = CFRunLoopTimerCreateWithHandler(nil, CFAbsoluteTimeGetCurrent() + Self.noticeDelay, 0, 0, 0) { [weak self] _ in
             guard let self, let snapshot = track(window, canWait: false) else { return }
             announce(snapshot)
         }
@@ -380,7 +383,7 @@ final class AppAgent: @unchecked Sendable {
             confirmFocusShortly()
             return
         }
-        // The bubble beside the text cursor never takes focus, so a focused window is never it.
+        // Notices never take focus, so a focused window is never one.
         if windows[windowID] == nil, let snapshot = track(element, canWait: false) {
             announce(snapshot)
         }

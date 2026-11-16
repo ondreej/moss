@@ -59,10 +59,11 @@ final class Session {
 
     /// Opens windows and waits until Moss manages all of them.
     @discardableResult
-    func open(_ tag: String, count: Int = 1, kind: String = "standard", size: String? = nil, minimum: String? = nil) throws -> [WindowInfo] {
+    func open(_ tag: String, count: Int = 1, kind: String = "standard", size: String? = nil, minimum: String? = nil, level: Int? = nil) throws -> [WindowInfo] {
         var arguments = ["-n", "-W", factory.path, "--args", "--tag", tag, "--count", String(count), "--kind", kind]
         if let size { arguments += ["--size", size] }
         if let minimum { arguments += ["--min", minimum] }
+        if let level { arguments += ["--level", String(level)] }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         process.arguments = arguments
@@ -134,12 +135,11 @@ final class Session {
         return front?[kCGWindowOwnerPID as String] as? pid_t
     }
 
-    /// Whether the application shows a window at the floating level, as the bubble beside the
-    /// text cursor is.
-    static func hasFloatingWindow(of pid: pid_t) -> Bool {
+    /// Whether the application shows a window above `level`, as the bubble beside the text
+    /// cursor is above the window it belongs to.
+    static func showsWindow(of pid: pid_t, above level: Int) -> Bool {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else { return false }
-        let floating = Int(CGWindowLevelForKey(.floatingWindow))
-        return list.contains { $0[kCGWindowOwnerPID as String] as? pid_t == pid && $0[kCGWindowLayer as String] as? Int == floating }
+        return list.contains { $0[kCGWindowOwnerPID as String] as? pid_t == pid && $0[kCGWindowLayer as String] as? Int ?? 0 > level }
     }
 
     /// Waits until the window server shows every visible window where Moss says it is.
@@ -291,17 +291,35 @@ let scenarios: [Scenario] = [
     Scenario(name: "the Caps Lock bubble beside the text cursor is left alone") { s in
         // While Caps Lock is on, macOS shows a bubble beside the text cursor in a small window
         // of the app being typed in. Focusing it would take the cursor away, which hides the
-        // bubble, and focusing the text again would bring it back, over and over.
-        let text = try s.open("text", kind: "text")[0]
-        try s.waitUntil("the text window to have focus") { try s.focused()?.id == text.id }
-        CapsLock.set(true)
-        defer { CapsLock.set(false) }
-        try s.waitUntil("macOS to show the Caps Lock bubble") { Session.hasFloatingWindow(of: text.pid) }
+        // bubble, and focusing the text again would bring it back, over and over. Launchers
+        // raise their windows above others, and the bubble goes above them in turn.
+        for (tag, level) in [("text", 0), ("raised", Int(CGWindowLevelForKey(.modalPanelWindow)))] {
+            let text = try s.open(tag, kind: "text", level: level == 0 ? nil : level)[0]
+            try s.waitUntil("the \(tag) window to have focus") { try s.focused()?.id == text.id }
+            CapsLock.set(true)
+            defer { CapsLock.set(false) }
+            try s.waitUntil("macOS to show the Caps Lock bubble over the \(tag) window") { Session.showsWindow(of: text.pid, above: level) }
+            Thread.sleep(forTimeInterval: 1)
+            let managed = try s.windows().filter { $0.pid == text.pid }.map(\.title)
+            try s.expect(managed == [text.title], "Moss manages \(managed), not just \(text.title)")
+            try s.expect(try s.focused()?.id == text.id, "focus moved to \(String(describing: try? s.focused()?.title))")
+            try s.expect(Session.showsWindow(of: text.pid, above: level), "the bubble over the \(tag) window went away")
+        }
+    },
+
+    Scenario(name: "notices over everything are left alone") { s in
+        // Keyboard utilities show "Caps Lock On" in an untitled window over everything, from
+        // an app in the background. Focusing it would take focus from the window in use.
+        let notifier = try s.open("notifier", kind: "notice")[0]
+        let typing = try s.open("typing")[0]
+        try s.waitUntil("the typing window to have focus") { try s.focused()?.id == typing.id }
+        kill(notifier.pid, SIGUSR1)
+        try s.waitUntil("the notice to show") { Session.showsWindow(of: notifier.pid, above: 0) }
         Thread.sleep(forTimeInterval: 1)
-        let managed = try s.windows().filter { $0.pid == text.pid }.map(\.title)
-        try s.expect(managed == [text.title], "Moss manages \(managed), not just \(text.title)")
-        try s.expect(try s.focused()?.id == text.id, "focus moved to \(String(describing: try? s.focused()?.title))")
-        try s.expect(Session.hasFloatingWindow(of: text.pid), "the bubble went away")
+        let managed = try s.windows().filter { $0.pid == notifier.pid }.map(\.title)
+        try s.expect(managed == [notifier.title], "Moss manages \(managed), not just \(notifier.title)")
+        try s.expect(try s.focused()?.id == typing.id, "focus moved to \(String(describing: try? s.focused()?.title))")
+        try s.expect(Session.frontmostOwner() == typing.pid, "the notice's app came to the front")
     },
 
     Scenario(name: "dialogs and fixed-size windows float") { s in
