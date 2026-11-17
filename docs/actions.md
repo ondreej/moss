@@ -122,8 +122,8 @@ recently.
 
 A window in macOS fullscreen, in a Space of its own, stays on its workspace. Switching to the
 workspace shows that Space when the window was the last one used there, or the only one, and
-activating the application, from a launcher for instance, shows the workspace. Switching to a
-workspace with windows brings the desktop back; an empty workspace cannot, so the Space stays.
+activating the application, from a launcher for instance, shows the workspace. Switching to
+another workspace brings the desktop back.
 
 **Displays.**
 

@@ -595,6 +595,7 @@ struct WindowManagerTests {
     @Test func anEmptyWorkspaceLeavesTheDesktopFocused() async throws {
         let harness = try await Harness(windows: [snapshot(1)])
         _ = harness.manager.respond(to: "focus-window id:0x1")
+        harness.manager.handle(PlatformEvent.focusChanged(WindowID(1)))
         _ = harness.manager.respond(to: "workspace 2")
         #expect(harness.system.desktopFocusCount == 1)
         _ = harness.manager.respond(to: "workspace 1")
@@ -602,6 +603,18 @@ struct WindowManagerTests {
         // A window going into native fullscreen keeps focus in its own Space.
         harness.manager.handle(PlatformEvent.windowNativeFullscreen(WindowID(1), true))
         #expect(harness.system.desktopFocusCount == 1)
+    }
+
+    @Test func finderNamingAWindowAfterTheDesktopTookFocusIsNotFollowed() async throws {
+        let harness = try await Harness(windows: [snapshot(1), snapshot(2, app: "com.apple.finder")])
+        _ = harness.manager.respond(to: "send-to-workspace 9 id:0x2")
+        _ = harness.manager.respond(to: "focus-window id:0x1")
+        harness.manager.handle(PlatformEvent.focusChanged(WindowID(1)))
+        _ = harness.manager.respond(to: "workspace 2")
+        #expect(harness.system.desktopFocusCount == 1)
+        // Finder, active for its desktop, names its window on workspace 9 as focused.
+        harness.manager.handle(PlatformEvent.focusChanged(WindowID(2)))
+        #expect(harness.manager.world.activeWorkspaceID == .numbered(2))
     }
 
     @Test func minimizedWindowsLeaveTheLayout() async throws {
@@ -721,12 +734,16 @@ struct WindowManagerTests {
         #expect(!harness.system.lastFocusLeftInPlace)
         harness.manager.handle(PlatformEvent.focusChanged(WindowID(2)))
 
-        // Only a window can take the display back from the Space: going to an empty workspace,
-        // the window in the Space keeps the keyboard.
+        // An empty workspace brings the desktop back.
         let desktop = harness.system.desktopFocusCount
         _ = harness.manager.respond(to: "workspace 6")
-        #expect(harness.system.desktopFocusCount == desktop)
-        // Activated from a launcher, it shows its workspace again.
+        #expect(harness.system.desktopFocusCount == desktop + 1)
+        // Activated from a launcher a moment later, it shows its workspace again. Sooner, it is
+        // macOS finishing bringing up its Space after the user moved on.
+        harness.manager.handle(PlatformEvent.focusChanged(WindowID(2)))
+        #expect(harness.manager.world.activeWorkspaceID == .numbered(6))
+        #expect(harness.system.desktopFocusCount == desktop + 2)
+        try await Task.sleep(for: .milliseconds(1100))
         harness.manager.handle(PlatformEvent.focusChanged(WindowID(2)))
         #expect(harness.manager.world.activeWorkspaceID == .numbered(5))
 

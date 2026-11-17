@@ -128,14 +128,15 @@ extension WindowManager {
             pendingFocus = (space, .now)
             focusRequests[space] = .now
             windowSystem.focus(space, raise: true)
-        } else if world.focusedWindowID == nil, world.focusedFullscreenSpace == nil, let previous = appliedFocus, dormant[previous] == nil,
+        } else if world.focusedWindowID == nil, world.focusedFullscreenSpace == nil, let previous = appliedFocus,
+                  world.fullscreenSpaces[previous] != nil || dormant[previous] == nil,
                   world.windows[previous].map({ !world.isVisible(window: $0.id) }) ?? true {
-            // Nothing in view is to have focus, and the window that had it went out of sight
-            // or closed: typing must not go on into a window no one can see. A window in a
-            // fullscreen Space keeps it: only another window can take the display back from
-            // that Space, so it is still in view.
+            // Nothing in view is to have focus, and the window that had it went out of sight,
+            // to a fullscreen Space left behind, or closed: typing must not go on into a window
+            // no one can see.
             appliedFocus = nil
-            windowSystem.focusDesktop()
+            desktopFocused = .now
+            windowSystem.focusDesktop(fromFullscreenSpace: world.fullscreenSpaces[previous] != nil)
         }
 
         if world.mode != appliedMode {

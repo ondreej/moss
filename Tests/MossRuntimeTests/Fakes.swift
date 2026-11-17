@@ -67,7 +67,7 @@ final class FakeWindowSystem: WindowSystem, @unchecked Sendable {
 
     func drain() async {}
     func focus(_ window: WindowID, raise: Bool) { state.withLock { $0.recordFocus(window, raise: raise) } }
-    func focusDesktop() { state.withLock { $0.desktopFocused += 1 } }
+    func focusDesktop(fromFullscreenSpace: Bool) { state.withLock { $0.desktopFocused += 1 } }
     func focus(_ window: WindowID, raise: Bool, after others: [WindowID]) {
         state.withLock { state in
             state.broughtForward.append(others)

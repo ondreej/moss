@@ -78,7 +78,9 @@ public protocol WindowSystem: AnyObject, Sendable {
     /// into view are put above the ones already there.
     func focus(_ window: WindowID, raise: Bool, after others: [WindowID])
     /// Focuses the desktop, as a click on it does, when no window in view is to have focus.
-    func focusDesktop()
+    /// `fromFullscreenSpace` brings the desktop back from the fullscreen Space shown, or being
+    /// brought up, on its display.
+    func focusDesktop(fromFullscreenSpace: Bool)
     func close(_ window: WindowID)
     func terminate(pid: Int32)
     func signal(pid: Int32, _ signal: Int32)

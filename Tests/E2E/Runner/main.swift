@@ -414,7 +414,7 @@ let scenarios: [Scenario] = [
 
     Scenario(name: "a window in macOS fullscreen stays on its workspace") { s in
         // macOS fullscreen puts a window in a Space of its own. Its workspace takes the user
-        // there, and the other workspaces with windows back to the desktop.
+        // there, and the other workspaces back to the desktop.
         let desk = try s.open("desk")[0]
         let movie = try s.open("movie", kind: "fullscreen")[0]
         func spaceShows(_ what: String) throws {
@@ -438,18 +438,25 @@ let scenarios: [Scenario] = [
         try s.run("workspace 5")
         try spaceShows("for workspace 5")
         try s.waitUntil("the movie application to be active") { Session.activeApplication() == movie.pid }
-        try s.run("workspace 1")
-        try desktopShows("for workspace 1 again")
+        // An empty workspace has no window to take the display back, and gets the desktop.
+        try s.run("workspace 6")
+        try desktopShows("for an empty workspace")
+        let finder = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?.processIdentifier
+        try s.waitUntil("the desktop to have focus") { Session.activeApplication() == finder }
+        Thread.sleep(forTimeInterval: 1)
+        try s.expect(!Session.isShown(movie.id), "the Space came back")
 
         // Passing by its workspace quickly, the user ends up where they went.
-        try s.run("workspace 5")
-        Thread.sleep(forTimeInterval: 0.15)
-        try s.run("workspace 1")
-        Thread.sleep(forTimeInterval: 1.5)
-        try desktopShows("after passing by")
+        for target in ["6", "1"] {
+            try s.run("workspace 5")
+            Thread.sleep(forTimeInterval: 0.15)
+            try s.run("workspace \(target)")
+            Thread.sleep(forTimeInterval: 1.5)
+            try desktopShows("after passing by to \(target)")
+            let focused = try s.focusedWorkspace()
+            try s.expect(focused == target, "workspace \(focused ?? "none") is focused, not \(target)")
+        }
         try s.expect(Session.isShown(desk.id), "the desk window is out of sight")
-        let focused = try s.focusedWorkspace()
-        try s.expect(focused == "1", "workspace \(focused ?? "none") is focused, not 1")
 
         // Activated from a launcher, it shows its workspace again.
         Session.activate(movie.pid)

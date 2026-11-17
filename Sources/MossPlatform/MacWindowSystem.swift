@@ -15,6 +15,7 @@ public final class MacWindowSystem: WindowSystem, @unchecked Sendable {
     private let sink = EventSink<PlatformEvent>()
     @MainActor private var observers: [any NSObjectProtocol] = []
     @MainActor private var reaper: Timer?
+    @MainActor private lazy var desktopAnchor = DesktopAnchor()
 
     @MainActor
     public init() {
@@ -284,17 +285,36 @@ public final class MacWindowSystem: WindowSystem, @unchecked Sendable {
         }
     }
 
-    public func focusDesktop() {
-        focusRequests.add(1, ordering: .relaxed)
-        guard let finder = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first else { return }
+    public func focusDesktop(fromFullscreenSpace: Bool) {
+        let request = focusRequests.add(1, ordering: .relaxed).newValue
+        // While macOS brings a fullscreen Space up, the desktop still counts as on screen, but
+        // focusing it would not stop the Space from coming.
+        guard let finder = Self.finder, fromFullscreenSpace || !Self.focusDesktop(of: finder) else { return }
+        // A fullscreen Space is shown, or coming, which macOS leaves only for a window on the
+        // desktop.
+        Task { @MainActor [self] in
+            await desktopAnchor.showDesktop()
+            guard focusRequests.load(ordering: .relaxed) == request, let finder = Self.finder else { return }
+            if !Self.focusDesktop(of: finder) { finder.activate() }
+        }
+    }
+
+    private static var finder: NSRunningApplication? {
+        NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first
+    }
+
+    /// Focuses Finder's desktop window, as a click on the desktop does. Returns `false` when no
+    /// desktop is on screen.
+    private static func focusDesktop(of finder: NSRunningApplication) -> Bool {
         let pid = finder.processIdentifier
         let desktopLevel = Int(CGWindowLevelForKey(.desktopIconWindow))
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
         let desktop = list.first {
             $0[kCGWindowOwnerPID as String] as? pid_t == pid && $0[kCGWindowLayer as String] as? Int == desktopLevel
         }
-        if let number = desktop?[kCGWindowNumber as String] as? UInt32, PrivateAPI.focus(window: CGWindowID(number), pid: pid, raise: true) { return }
-        finder.activate()
+        guard let number = desktop?[kCGWindowNumber as String] as? UInt32 else { return false }
+        if !PrivateAPI.focus(window: CGWindowID(number), pid: pid, raise: true) { finder.activate() }
+        return true
     }
 
     /// Marks a request that should not be carried out any more.

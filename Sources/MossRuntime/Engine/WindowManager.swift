@@ -53,6 +53,8 @@ public final class WindowManager {
     var focusRequests: [WindowID: ContinuousClock.Instant] = [:]
     /// Windows last focused only to bring them forward, with when.
     var broughtForward: [WindowID: ContinuousClock.Instant] = [:]
+    /// When Moss last gave focus to the desktop.
+    var desktopFocused: ContinuousClock.Instant?
     /// When the primary button last went down.
     var lastClick: ContinuousClock.Instant?
     var appliedMode: String?

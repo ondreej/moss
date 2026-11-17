@@ -116,6 +116,13 @@ extension WindowManager {
                 appliedFocus = id
                 break
             }
+            if let id, let asked = desktopFocused, ContinuousClock.now - asked < .milliseconds(1500),
+               world.windows[id]?.properties.appID == Self.finder, !world.isVisible(window: id) {
+                // The desktop belongs to Finder, which may then name one of its windows out of
+                // sight as focused. That is not the user going there.
+                Log.engine.debug("ignoring focus of \(id.address, privacy: .public), Finder's after the desktop took focus")
+                break
+            }
             if let id, let raised = broughtForward[id], ContinuousClock.now - raised < .seconds(1),
                world.focusedWindowID != id, lastClick.map({ $0 < raised }) ?? true {
                 // Focused only to bring it forward; applications report focus each on their own,
@@ -193,11 +200,13 @@ extension WindowManager {
     }
 
     /// Whether `id` is out of sight of what Moss shows: on a hidden workspace, or in a
-    /// fullscreen Space while another window has focus, which takes the display back.
+    /// fullscreen Space that does not have focus.
     private func isLeftBehind(_ id: WindowID) -> Bool {
         if world.windows[id] != nil { return !world.isVisible(window: id) }
-        return world.fullscreenSpaces[id] != nil && world.focusedFullscreenSpace != id && world.focusedWindowID != nil
+        return world.fullscreenSpaces[id] != nil && world.focusedFullscreenSpace != id
     }
+
+    static let finder = "com.apple.finder"
 
     func forget(_ id: WindowID) {
         if world.windows[id] != nil { lastDeparture = .now }
