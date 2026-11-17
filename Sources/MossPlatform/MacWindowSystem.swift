@@ -293,9 +293,13 @@ public final class MacWindowSystem: WindowSystem, @unchecked Sendable {
         // A fullscreen Space is shown, or coming, which macOS leaves only for a window on the
         // desktop.
         Task { @MainActor [self] in
-            await desktopAnchor.showDesktop()
-            guard focusRequests.load(ordering: .relaxed) == request, let finder = Self.finder else { return }
-            if !Self.focusDesktop(of: finder) { finder.activate() }
+            // A display slow to switch gets another go.
+            for _ in 0..<2 {
+                await desktopAnchor.showDesktop()
+                guard focusRequests.load(ordering: .relaxed) == request, let finder = Self.finder else { return }
+                if Self.focusDesktop(of: finder) { return }
+            }
+            Self.finder?.activate()
         }
     }
 

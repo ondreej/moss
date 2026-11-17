@@ -22,7 +22,11 @@ extension World {
         case .workspace(let selector):
             try switchWorkspace(selector)
         case .moveToWorkspace(let selector, let windowSelector, let follow):
-            try moveToWorkspace(try targetWindow(windowSelector), selector, follow: follow)
+            if windowSelector == nil, let space = focusedFullscreenSpace {
+                try moveFullscreenSpace(space, to: selector, follow: follow)
+            } else {
+                try moveToWorkspace(try targetWindow(windowSelector), selector, follow: follow)
+            }
         case .bringWorkspace(let selector):
             let target = try resolve(selector)
             guard let monitor = focusedMonitorID else { break }

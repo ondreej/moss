@@ -123,7 +123,8 @@ recently.
 A window in macOS fullscreen, in a Space of its own, stays on its workspace. Switching to the
 workspace shows that Space when the window was the last one used there, or the only one, and
 activating the application, from a launcher for instance, shows the workspace. Switching to
-another workspace brings the desktop back.
+another workspace brings the desktop back. While the Space is shown, `move-to-workspace` and
+`send-to-workspace` move the window to another workspace, which then leads to it.
 
 **Displays.**
 

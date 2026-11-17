@@ -28,6 +28,30 @@ extension World {
         return workspace
     }
 
+    /// Moves a window in a fullscreen Space to another workspace. It stays in its Space, which
+    /// that workspace now leads to. Following it, focus stays in the Space; otherwise it goes
+    /// back to the workspace the window left, and the desktop comes back.
+    mutating func moveFullscreenSpace(_ id: WindowID, to selector: WorkspaceSelector, follow: Bool) throws(ActionError) {
+        let target = try resolve(selector)
+        guard let source = fullscreenSpaces[id], source != target else { return }
+        if workspaces[target] == nil {
+            guard let monitor = boundMonitor(for: target) ?? focusedMonitorID ?? workspaces[source]?.monitor else { return }
+            createWorkspace(target, on: monitor)
+        }
+        fullscreenSpaces[id] = target
+        if workspaces[source]?.lastFocused == id { workspaces[source]?.lastFocused = nil }
+        // Switching to the workspace leads to it.
+        workspaces[target]?.lastFocused = id
+        if follow {
+            activate(target, preferredMonitor: focusedMonitorID, focus: false)
+            focusFullscreenSpace(id)
+        } else if focusedFullscreenSpace == id {
+            focusedFullscreenSpace = nil
+            restoreFocus(on: source)
+        }
+        removeWorkspaceIfUnused(source)
+    }
+
     /// Gives focus to the window in a fullscreen Space, showing its workspace.
     mutating func focusFullscreenSpace(_ id: WindowID) {
         guard let workspace = fullscreenSpaces[id], let monitor = workspaces[workspace]?.monitor else { return }

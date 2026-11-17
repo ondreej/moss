@@ -743,6 +743,29 @@ struct WorldTests {
         #expect(world.workspaces[.numbered(2)] == nil)
     }
 
+    @Test func windowsInFullscreenSpacesMoveBetweenWorkspaces() throws {
+        var world = makeWorld()
+        world.open(1)
+        try world.run("workspace 2")
+        world.open(2)
+        world.moveToFullscreenSpace(2)
+
+        // Taken along, it keeps focus in its Space, and the workspace it left goes.
+        try world.run("move-to-workspace 3")
+        #expect(world.fullscreenSpaces[2] == .numbered(3))
+        #expect(world.activeWorkspaceID == .numbered(3))
+        #expect(world.focusedFullscreenSpace == 2)
+        #expect(world.workspaces[.numbered(2)] == nil)
+
+        // Sent away, focus stays on the workspace, and the one it went to leads to it.
+        try world.run("send-to-workspace 1")
+        #expect(world.fullscreenSpaces[2] == .numbered(1))
+        #expect(world.activeWorkspaceID == .numbered(3))
+        #expect(world.focusedFullscreenSpace == nil)
+        try world.run("workspace 1")
+        #expect(world.focusedFullscreenSpace == 2)
+    }
+
     @Test func aRestartedSessionPutsBackLayoutsAndFullscreen() throws {
         var world = makeWorld()
         for id in 1...4 { world.open(WindowID(UInt32(id))) }

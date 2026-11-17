@@ -466,11 +466,21 @@ let scenarios: [Scenario] = [
         try s.run("workspace 1")
         try desktopShows("after the launcher")
 
-        // Out of fullscreen, it is back in its workspace's layout.
+        // Taken along to another workspace, it stays in its Space, which that workspace leads to.
         try s.run("workspace 5")
         try spaceShows("once more")
+        try s.run("move-to-workspace 7")
+        try s.waitUntil("workspace 7 to be focused") { try s.focusedWorkspace() == "7" }
+        Thread.sleep(forTimeInterval: 1)
+        try s.expect(Session.isShown(movie.id), "the Space went away as its window moved")
+        try s.run("workspace 1")
+        try desktopShows("after the move")
+        try s.run("workspace 7")
+        try spaceShows("from its new workspace")
+
+        // Out of fullscreen, it is back in its workspace's layout.
         kill(movie.pid, SIGUSR1)
-        try s.waitUntil("the movie window to be back on workspace 5") { try s.windows().first { $0.id == movie.id }?.workspace == "5" }
+        try s.waitUntil("the movie window to be back on workspace 7") { try s.windows().first { $0.id == movie.id }?.workspace == "7" }
         try s.waitUntil("the movie window to have focus once back") { try s.focused()?.id == movie.id }
     },
 
