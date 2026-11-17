@@ -93,6 +93,11 @@ public final class MacWindowSystem: WindowSystem, @unchecked Sendable {
             self?.send(.applicationHidden(pid: pid, false))
             self?.agent(for: pid)?.reportFocusedWindow()
         }
+        observers.append(center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            // Windows of a Space are listed only while it is shown, as the desktop's are not
+            // from a fullscreen Space.
+            for agent in self?.agents.withLock({ Array($0.values) }) ?? [] { agent.reportWindowsFoundSince() }
+        })
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.displaysChanged() }
         })
@@ -228,6 +233,13 @@ public final class MacWindowSystem: WindowSystem, @unchecked Sendable {
             discovery.finish()
         }
         return await discovery.result().sorted { $0.id < $1.id }
+    }
+
+    public func existingWindows(among ids: [WindowID]) -> Set<WindowID> {
+        var numbers = ids.map { UnsafeRawPointer(bitPattern: UInt($0.rawValue)) }
+        guard !numbers.isEmpty, let array = CFArrayCreate(nil, &numbers, numbers.count, nil),
+              let list = CGWindowListCreateDescriptionFromArray(array) as? [[String: Any]] else { return [] }
+        return Set(list.compactMap { ($0[kCGWindowNumber as String] as? UInt32).map { WindowID($0) } })
     }
 
     public func hiddenApplications() -> Set<Int32> {

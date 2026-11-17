@@ -15,6 +15,11 @@ extension WindowManager {
         case .windowReturnedFromFullscreen(let id, let snapshot) where replacedByFullscreen[id] != nil:
             returnFromFullscreen(id, as: snapshot)
 
+        case .windowAppeared(let snapshot) where pendingPlacements.contains(where: { $0.window == snapshot.id }):
+            // Not a new window, but one of the last session found late, as when its application
+            // is activated.
+            adoptExisting(snapshot)
+
         case .windowAppeared(let snapshot), .windowReturnedFromFullscreen(_, let snapshot):
             observedFrames[snapshot.id] = snapshot.frame
             world.addWindow(snapshot.id, properties: snapshot.properties, frame: snapshot.frame, origin: .opened)

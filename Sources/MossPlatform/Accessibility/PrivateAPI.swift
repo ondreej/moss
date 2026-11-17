@@ -40,6 +40,34 @@ enum PrivateAPI {
     /// Despite its name, returns a new array the caller owns: one number per corner.
     static let copyCornerRadii = symbol("SLSWindowIteratorGetResolvedCornerRadii", in: skyLight, as: CopyCornerRadii.self)
 
+    typealias CopyManagedDisplaySpaces = @convention(c) (Int32) -> Unmanaged<CFArray>?
+    typealias MoveWindowsToManagedSpace = @convention(c) (Int32, CFArray, UInt64) -> Void
+
+    /// Every display's Spaces, with the one shown.
+    static let copyManagedDisplaySpaces = symbol("SLSCopyManagedDisplaySpaces", in: skyLight, as: CopyManagedDisplaySpaces.self)
+    static let moveWindowsToManagedSpace = symbol("SLSMoveWindowsToManagedSpace", in: skyLight, as: MoveWindowsToManagedSpace.self)
+
+    /// The type of a fullscreen Space in the window server's description of a display's Spaces;
+    /// a desktop's is `0`.
+    private static let fullscreenSpaceType = 4
+
+    /// Puts one of Moss's own windows on the desktop of the display showing a fullscreen Space.
+    /// Returns `false` when no display shows one, or the private functions are unavailable.
+    static func moveToDesktop(_ window: CGWindowID) -> Bool {
+        guard let mainConnection, let copyManagedDisplaySpaces, let moveWindowsToManagedSpace else { return false }
+        let connection = mainConnection()
+        guard let displays = copyManagedDisplaySpaces(connection)?.takeRetainedValue() as? [[String: Any]] else { return false }
+        for display in displays {
+            guard let current = display["Current Space"] as? [String: Any], current["type"] as? Int == fullscreenSpaceType,
+                  let spaces = display["Spaces"] as? [[String: Any]],
+                  let desktop = spaces.first(where: { $0["type"] as? Int == 0 }),
+                  let id = (desktop["id64"] as? NSNumber ?? desktop["ManagedSpaceID"] as? NSNumber)?.uint64Value else { continue }
+            moveWindowsToManagedSpace(connection, [NSNumber(value: window)] as CFArray, id)
+            return true
+        }
+        return false
+    }
+
     /// The radius of a window's rounded corners, as the window server draws them. Applications
     /// choose it (larger for windows with toolbars), and the accessibility API does not report it.
     static func cornerRadius(of window: CGWindowID) -> Double? {

@@ -406,6 +406,18 @@ final class AppAgent: @unchecked Sendable {
         CFRunLoopAddTimer(runLoop, timer, .defaultMode)
     }
 
+    /// Reports windows not seen before as existing ones. The accessibility API lists a
+    /// window only while its Space is shown.
+    func reportWindowsFoundSince() {
+        perform { [self] in
+            let known = Set(windows.keys)
+            ensureAttached()
+            for snapshot in scan() where !known.contains(snapshot.id) {
+                emit(.windowDiscovered(snapshot))
+            }
+        }
+    }
+
     /// Reports the application's focused window, e.g. after the application was activated.
     func reportFocusedWindow() {
         perform { [self] in

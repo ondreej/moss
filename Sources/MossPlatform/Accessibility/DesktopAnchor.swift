@@ -31,7 +31,11 @@ final class DesktopAnchor {
         // Moss becoming active is not the user opening it.
         FocusRelay.pass()
         window.orderFrontRegardless()
-        _ = PrivateAPI.focus(window: CGWindowID(window.windowNumber), pid: getpid(), raise: true)
+        // Shown at first in the Space on screen when Moss has no window on the desktop yet, as
+        // just after it started there.
+        let number = CGWindowID(window.windowNumber)
+        _ = PrivateAPI.moveToDesktop(number)
+        _ = PrivateAPI.focus(window: number, pid: getpid(), raise: true)
         try? await Task.sleep(for: Self.hold)
         window.orderOut(nil)
     }

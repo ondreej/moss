@@ -68,6 +68,9 @@ public final class WindowManager {
 
     /// Windows set aside while minimized, in native fullscreen or while their application is hidden.
     var dormant: [WindowID: DormantWindow] = [:]
+    /// Where the last session had windows that still exist but were not found at the start, as
+    /// windows of the desktop are not from a fullscreen Space. They go there once found.
+    var pendingPlacements: [SessionState.Placement] = []
     /// Windows that made themselves cover a whole display, as video players do for fullscreen.
     var coveringWindows: Set<WindowID> = []
     /// Windows their application closed for a fullscreen window of its own, kept for the
@@ -149,7 +152,12 @@ public final class WindowManager {
         // and then saved, without any.
         await windowSystem.waitUntilUnlocked()
         for snapshot in await windowSystem.discoverWindows() { adoptExisting(snapshot) }
-        if let session { world.restore(session) }
+        if let session {
+            world.restore(session)
+            let missing = session.placements.filter { world.windows[$0.window] == nil }
+            let existing = windowSystem.existingWindows(among: missing.map(\.window))
+            pendingPlacements = missing.filter { existing.contains($0.window) }
+        }
         // Windows of hidden applications wait outside the layout until they are shown.
         let hidden = windowSystem.hiddenApplications()
         for window in world.windows.values where hidden.contains(window.properties.pid) { setAside(window.id) }
@@ -170,6 +178,9 @@ public final class WindowManager {
             frame = monitor.usableFrame.centered(snapshot.frame.size)
         }
         world.addWindow(snapshot.id, properties: snapshot.properties, frame: frame, origin: .existing)
+        if let index = pendingPlacements.firstIndex(where: { $0.window == snapshot.id }) {
+            world.restore(SessionState(placements: [pendingPlacements.remove(at: index)]))
+        }
         if snapshot.isFullscreen { enterFullscreen(snapshot.id, ownSpace: true) }
     }
 
@@ -282,7 +293,15 @@ public final class WindowManager {
 
     func saveSession() {
         // Until the previous session is restored, there is nothing to save but a partial one.
-        guard hasStarted, let sessionFile, let data = try? JSONEncoder().encode(world.sessionState()) else { return }
+        guard hasStarted, let sessionFile else { return }
+        var state = world.sessionState()
+        if !pendingPlacements.isEmpty {
+            // Kept for windows not found yet, for as long as they exist.
+            let existing = windowSystem.existingWindows(among: pendingPlacements.map(\.window))
+            pendingPlacements.removeAll { !existing.contains($0.window) }
+            state.placements += pendingPlacements
+        }
+        guard let data = try? JSONEncoder().encode(state) else { return }
         try? data.write(to: sessionFile, options: .atomic)
     }
 

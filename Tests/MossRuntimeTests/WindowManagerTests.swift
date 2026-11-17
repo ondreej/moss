@@ -926,6 +926,35 @@ struct WindowManagerTests {
         #expect(changes.withLock { $0 } == [.on, .toggle])
     }
 
+    @Test func windowsOfAnotherSpaceGoBackWhereTheyWereOnceFound() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("moss-session-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let sessionFile = directory.appendingPathComponent("session.json")
+        let placements = ([1, 2, 3] as [UInt32]).map { SessionState.Placement(window: WindowID($0), workspace: .numbered(Int($0) + 2), isFloating: false, floatingFrame: .zero, isPinned: false) }
+        try JSONEncoder().encode(SessionState(placements: placements)).write(to: sessionFile)
+        // Window 2 is on the desktop while a fullscreen Space is shown; window 3 closed.
+        let system = FakeWindowSystem(windows: [snapshot(1)])
+        system.state.withLock { $0.otherSpace = [WindowID(2)] }
+        let manager = WindowManager(
+            windowSystem: system,
+            input: FakeInputSystem(),
+            decorations: FakeDecorations(),
+            notices: FakeNotices(),
+            store: ConfigurationStore(mainFile: try configurationFile("animation.enabled = false\n")),
+            sessionFile: sessionFile
+        )
+        await manager.start()
+        #expect(manager.world.windows[WindowID(1)]?.workspace == .numbered(3))
+        #expect(manager.world.windows[WindowID(2)] == nil)
+        // Its place is kept while it is out of sight, and the closed window's is dropped.
+        manager.saveSession()
+        let saved = try JSONDecoder().decode(SessionState.self, from: Data(contentsOf: sessionFile))
+        #expect(saved.placements.map(\.window) == [WindowID(1), WindowID(2)])
+        // Its Space shown again, it is found and goes back there.
+        manager.handle(PlatformEvent.windowDiscovered(snapshot(2)))
+        #expect(manager.world.windows[WindowID(2)]?.workspace == .numbered(4))
+    }
+
     @Test func behindALockedScreenTheSessionWaitsForTheWindows() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("moss-session-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

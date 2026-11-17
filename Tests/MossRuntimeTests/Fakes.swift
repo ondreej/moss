@@ -20,6 +20,8 @@ final class FakeWindowSystem: WindowSystem, @unchecked Sendable {
         var signals: [(pid: Int32, signal: Int32)] = []
         var hiddenApplications: Set<Int32> = []
         var isLocked = false
+        /// Windows of another Space: they exist, but are not found until it is shown.
+        var otherSpace: Set<WindowID> = []
     }
 
     let state = Mutex(State())
@@ -56,6 +58,9 @@ final class FakeWindowSystem: WindowSystem, @unchecked Sendable {
     }
     func discoverWindows() async -> [WindowSnapshot] { state.withLock { Array($0.windows.values).sorted { $0.id < $1.id } } }
     func hiddenApplications() -> Set<Int32> { state.withLock(\.hiddenApplications) }
+    func existingWindows(among ids: [WindowID]) -> Set<WindowID> {
+        state.withLock { state in Set(ids.filter { state.windows[$0] != nil || state.otherSpace.contains($0) }) }
+    }
 
     func setFrames(_ frames: [WindowID: Rect]) {
         state.withLock { state in

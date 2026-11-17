@@ -88,6 +88,23 @@ final class Session {
         return window
     }
 
+    /// Quits Moss and opens it again, waiting until it answers.
+    func restartMoss() throws {
+        let identifier = "app.moss.Moss"
+        guard let moss = NSRunningApplication.runningApplications(withBundleIdentifier: identifier).first,
+              let url = moss.bundleURL else { throw Failure("Moss is not running") }
+        // Moss shuts down as it does on quitting, saving its session.
+        let pid = moss.processIdentifier
+        kill(pid, SIGTERM)
+        try waitUntil("Moss to quit", timeout: 10) { kill(pid, 0) == -1 }
+        let open = Process()
+        open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        open.arguments = [url.path]
+        try open.run()
+        open.waitUntilExit()
+        try waitUntil("Moss to answer", timeout: 10) { (try? run("status")) != nil }
+    }
+
     /// Moves windows that do not belong to the suite out of the way, onto workspace 99.
     func isolate() throws {
         for window in try windows() where !window.bundleID.contains("WindowFactory") {
@@ -410,6 +427,25 @@ let scenarios: [Scenario] = [
         let fixed = try s.open("fixed", kind: "fixed", size: "320x240")[0]
         try s.expect(dialog.isFloating, "dialog is tiled")
         try s.expect(fixed.isFloating, "fixed-size window is tiled")
+    },
+
+    Scenario(name: "windows out of sight as Moss starts go back to their workspaces") { s in
+        // A window is listed only while its Space is shown. Started while a fullscreen Space
+        // is, Moss finds the desktop's windows once it shows, and puts them back.
+        let desk = try s.open("desk")[0]
+        try s.run("send-to-workspace 3 id:\(desk.id)")
+        let movie = try s.open("movie", kind: "fullscreen")[0]
+        kill(movie.pid, SIGUSR1)
+        try s.waitUntil("its Space to show") { Session.isShown(movie.id) && !Session.isShown(desk.id) }
+        // Once macOS is done bringing the Space up.
+        Thread.sleep(forTimeInterval: 2)
+        try s.restartMoss()
+        Thread.sleep(forTimeInterval: 1)
+        try s.run("workspace 2")
+        try s.waitUntil("the desktop to show") { !Session.isShown(movie.id) }
+        try s.waitUntil("the desk window to be back on workspace 3, not \(String(describing: try? s.windows().first { $0.id == desk.id }?.workspace))") {
+            try s.windows().first { $0.id == desk.id }?.workspace == "3"
+        }
     },
 
     Scenario(name: "a window in macOS fullscreen stays on its workspace") { s in

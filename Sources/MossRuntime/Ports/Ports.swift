@@ -65,6 +65,8 @@ public protocol WindowSystem: AnyObject, Sendable {
     func discoverWindows() async -> [WindowSnapshot]
     /// The applications that are currently hidden.
     func hiddenApplications() -> Set<Int32>
+    /// Which of `ids` are windows that still exist, on any Space.
+    func existingWindows(among ids: [WindowID]) -> Set<WindowID>
 
     /// Moves and resizes windows. Returns immediately; work happens in the background.
     func setFrames(_ frames: [WindowID: Rect])
