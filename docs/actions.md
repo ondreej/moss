@@ -52,6 +52,7 @@ Switches take `on`, `off` or `toggle`, and toggle when left out.
 | `palette` |  | Search windows, workspaces, actions and shortcuts |
 | `overview` | `[next\|previous]` | See every workspace at once; again while open, highlight the next or previous one |
 | `pause` | `[on\|off\|toggle]` | Stop arranging windows, or resume |
+| `start-at-login` | `[on\|off\|toggle]` | Open Moss when you log in, or stop |
 | `reload` |  | Read the configuration file again |
 | `quit` |  | Quit Moss |
 

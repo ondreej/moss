@@ -4,7 +4,6 @@ import MossCore
 import MossPlatform
 import MossRuntime
 import MossSettings
-import ServiceManagement
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -25,14 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 AccessibilityPermission.request()
                 AccessibilityPermission.openSettings()
             },
-            startsAtLogin: { SMAppService.mainApp.status == .enabled },
-            setStartsAtLogin: { enabled in
-                do {
-                    if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-                } catch {
-                    NSLog("Moss: could not change the login item: \(error)")
-                }
-            }
+            startsAtLogin: { LoginItem.isEnabled },
+            setStartsAtLogin: { LoginItem.isEnabled = $0 }
         )
     )
 
@@ -47,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in self?.handle(events) }
         }
         controller.onTileFocused = { [weak self] in self?.settings.keepInFront() }
+        controller.onStartAtLogin = { change in LoginItem.isEnabled = change.apply(to: LoginItem.isEnabled) }
         controller.onShow = { [weak self] surface in
             switch surface {
             case .palette: self?.showPaletteFromKeyboard()

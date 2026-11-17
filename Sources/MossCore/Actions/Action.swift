@@ -78,6 +78,8 @@ public enum Action: Hashable, Sendable, CustomStringConvertible {
     case show(Surface)
     /// Stops arranging windows, or resumes.
     case pause(Switch)
+    /// Opens Moss when the user logs in, or stops doing so.
+    case startAtLogin(Switch)
     case reload
     case quit
 
@@ -99,7 +101,7 @@ public enum Action: Hashable, Sendable, CustomStringConvertible {
     /// while tiling is paused. Others, such as opening apps or sending keys, still work.
     public var arrangesWindows: Bool {
         switch self {
-        case .run, .close, .quitApp, .signal, .sendKeys, .renameWorkspace, .tag, .mode, .emit, .show(.palette), .pause, .reload, .quit:
+        case .run, .close, .quitApp, .signal, .sendKeys, .renameWorkspace, .tag, .mode, .emit, .show(.palette), .pause, .startAtLogin, .reload, .quit:
             false
         default:
             true

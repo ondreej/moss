@@ -21,6 +21,8 @@ public enum Effect: Hashable, Sendable {
     case show(Action.Surface)
     /// Stop or resume arranging windows.
     case pause(Action.Switch)
+    /// Open Moss at login, or stop.
+    case startAtLogin(Action.Switch)
     /// Read the configuration file again.
     case reload
     /// Quit Moss.

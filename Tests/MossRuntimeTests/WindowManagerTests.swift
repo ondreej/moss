@@ -900,6 +900,15 @@ struct WindowManagerTests {
         #expect(manager.world.windows[WindowID(1)]?.workspace == .numbered(3))
     }
 
+    @Test func openingAtLoginIsLeftToTheApplication() async throws {
+        let harness = try await Harness()
+        let changes = Mutex<[Action.Switch]>([])
+        harness.manager.onStartAtLogin = { change in changes.withLock { $0.append(change) } }
+        #expect(harness.manager.respond(to: "start-at-login on") == "ok\n")
+        _ = harness.manager.respond(to: "start-at-login")
+        #expect(changes.withLock { $0 } == [.on, .toggle])
+    }
+
     @Test func behindALockedScreenTheSessionWaitsForTheWindows() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("moss-session-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

@@ -53,6 +53,7 @@ extension Action {
         entry("palette", "", "Search windows, workspaces, actions and shortcuts"),
         entry("overview", "[next|previous]", "See every workspace at once; again while open, highlight the next or previous one"),
         entry("pause", "[on|off|toggle]", "Stop arranging windows, or resume"),
+        entry("start-at-login", "[on|off|toggle]", "Open Moss when you log in, or stop"),
         entry("reload", "", "Read the configuration file again"),
         entry("quit", "", "Quit Moss"),
         entry("flip-split", "", "Turn the split around the focused window", .bsp),
@@ -235,6 +236,7 @@ extension Action {
             case let other?: throw .invalidArgument("overview expects next or previous, not '\(other)'")
             }
         case "pause": self = .pause(try reader.switchValue())
+        case "start-at-login": self = .startAtLogin(try reader.switchValue())
         case "reload": self = .reload
         case "quit": self = .quit
 
@@ -301,6 +303,7 @@ extension Action {
         case .emit(let text): return with("emit", text)
         case .show(let surface): return surface.rawValue
         case .pause(let change): return with("pause", toggle(change))
+        case .startAtLogin(let change): return with("start-at-login", toggle(change))
         case .reload: return "reload"
         case .quit: return "quit"
         }

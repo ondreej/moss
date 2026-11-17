@@ -17,6 +17,8 @@ final class AppController {
     var onEvents: (@Sendable ([Event]) -> Void)?
     /// Called when a binding asks for one of Moss's interfaces.
     var onShow: ((Action.Surface) -> Void)?
+    /// Called when an action turns opening at login on or off.
+    var onStartAtLogin: ((Action.Switch) -> Void)?
     /// Called when a tiled window took focus.
     var onTileFocused: (() -> Void)?
 
@@ -47,9 +49,11 @@ final class AppController {
         self.manager = manager
         let show: @Sendable (Action.Surface) -> Void = { [weak self] surface in Task { @MainActor in self?.onShow?(surface) } }
         let tileFocused: @Sendable () -> Void = { [weak self] in Task { @MainActor in self?.onTileFocused?() } }
+        let startAtLogin: @Sendable (Action.Switch) -> Void = { [weak self] change in Task { @MainActor in self?.onStartAtLogin?(change) } }
         await EngineActor.run {
             manager.onExit = { AppController.terminate() }
             manager.onShow = show
+            manager.onStartAtLogin = startAtLogin
             manager.onTileFocused = tileFocused
         }
 

@@ -26,6 +26,8 @@ public final class WindowManager {
     public var onExit: (@Sendable () -> Void)?
     /// Opens one of the interfaces the application draws, such as the palette.
     public var onShow: (@Sendable (Action.Surface) -> Void)?
+    /// Makes the application open at login, or stop.
+    public var onStartAtLogin: (@Sendable (Action.Switch) -> Void)?
     /// Called when a tiled window took focus, so Moss's own windows can stay in front of it.
     public var onTileFocused: (@Sendable () -> Void)?
 

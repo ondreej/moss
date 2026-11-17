@@ -26,6 +26,7 @@ extension WindowManager {
             case .emit(let event): events.append(event)
             case .show(let surface): onShow?(surface)
             case .pause(let change): setPaused(change.apply(to: isPaused))
+            case .startAtLogin(let change): onStartAtLogin?(change)
             case .reload: reloadConfiguration()
             case .quitMoss: onExit?()
             }

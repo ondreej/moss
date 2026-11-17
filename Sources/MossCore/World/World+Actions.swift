@@ -142,6 +142,8 @@ extension World {
             effects.append(.show(surface))
         case .pause(let change):
             effects.append(.pause(change))
+        case .startAtLogin(let change):
+            effects.append(.startAtLogin(change))
         case .reload:
             effects.append(.reload)
         case .quit:

@@ -42,7 +42,7 @@ public enum Describe {
             return .layout
         case .tabs, .tab, .joinTabs, .leaveTabs, .moveTab:
             return .tabs
-        case .mode, .emit, .show, .pause, .reload, .quit:
+        case .mode, .emit, .show, .pause, .startAtLogin, .reload, .quit:
             return .system
         }
     }
@@ -115,6 +115,7 @@ public enum Describe {
         case .show(.overview): return "Show all workspaces"
         case .show(.overviewPrevious): return "Show all workspaces, stepping back"
         case .pause(let change): return toggled(change, "Pause tiling", "Resume tiling", "Pause or resume tiling")
+        case .startAtLogin(let change): return toggled(change, "Open Moss at login", "Stop opening Moss at login", "Turn opening Moss at login on or off")
         case .reload: return "Reload configuration"
         case .quit: return "Quit Moss"
         }

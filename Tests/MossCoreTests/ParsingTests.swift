@@ -14,7 +14,7 @@ struct ParsingTests {
         "tabs", "tab next", "tab 2", "join-tabs left", "leave-tabs", "move-tab previous", "mode resize", "mode default",
         "run open -a Terminal", "run [float, size=60% 70%] open -a Terminal", "close", "close app:Safari", "quit-app", "signal TERM",
         "signal KILL app:^kitty$", "send-keys cmd-c", "send-keys ctrl-shift-tab app:^com.apple.Safari$", "emit hello there",
-        "palette", "overview", "overview previous", "pause", "pause on", "reload", "quit",
+        "palette", "overview", "overview previous", "pause", "pause on", "start-at-login", "start-at-login off", "reload", "quit",
         "flip-split", "preselect right", "promote", "swap-main", "main-count +1", "stack-side center", "main-size 0.6", "rotate next",
         "column next", "column-width next", "column-width all 0.5", "move-column left", "join-column right", "leave-column",
         "fit to-end", "scroll -200", "reveal", "scroll-to toggle", "lock-view on",
