@@ -62,7 +62,7 @@ public struct Window: Hashable, Sendable, Identifiable {
         didSet { floatingFrame.size = sizeLimits.clamp(floatingFrame.size) }
     }
     /// The smallest size the window accepted when tiled: learned when its application keeps it
-    /// larger than its tile. Layouts make room for it.
+    /// larger than its tile, and forgotten once the window is seen smaller. Layouts make room for it.
     public var minimumTileSize: Size?
     /// Bounds on the floating size, from the `min-size` and `max-size` rules.
     public var sizeLimits = SizeLimits() {

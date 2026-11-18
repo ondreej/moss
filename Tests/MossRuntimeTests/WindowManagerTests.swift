@@ -111,6 +111,19 @@ struct WindowManagerTests {
         #expect(harness.system.frame(of: WindowID(1)) == Rect(x: 0, y: 0, width: 300, height: 600))
     }
 
+    @Test func windowsSlowToTakeTheirTileGiveTheRoomBack() async throws {
+        let harness = try await Harness(windows: [snapshot(1), snapshot(2)])
+        // Window 2 is moved into its tile but still has its earlier width when its frame settles,
+        // which looks like a minimum size…
+        harness.manager.handle(harness.system.userChanged(WindowID(2), to: Rect(x: 500, y: 0, width: 700, height: 600)))
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(harness.system.frame(of: WindowID(1)) == Rect(x: 0, y: 0, width: 300, height: 600))
+        // …until it takes the width it was asked for, and the layout goes back to an even split.
+        harness.manager.handle(harness.system.userChanged(WindowID(2), to: Rect(x: 300, y: 0, width: 500, height: 600)))
+        #expect(harness.system.frame(of: WindowID(1)) == Rect(x: 0, y: 0, width: 500, height: 600))
+        #expect(harness.system.frame(of: WindowID(2)) == Rect(x: 500, y: 0, width: 500, height: 600))
+    }
+
     @Test func windowsSmallerThanTheirTileAreCentered() async throws {
         let harness = try await Harness(windows: [snapshot(1), snapshot(2)])
         // Window 2 keeps its own width, as fixed-size and fixed-aspect windows do. Once it

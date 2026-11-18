@@ -387,6 +387,20 @@ extension World {
         return true
     }
 
+    /// Forgets the minimum size learned for a window along each axis where the window has since
+    /// been `seen` smaller. Such a minimum came from a frame the window had not left yet, as one
+    /// an application slow to resize still reports. Returns whether anything was forgotten.
+    @discardableResult
+    public mutating func forgetMinimumSize(of id: WindowID, seen size: Size, tolerance: Double = 8) -> Bool {
+        guard var minimum = windows[id]?.minimumTileSize else { return false }
+        let learned = minimum
+        if size.width < minimum.width - tolerance { minimum.width = 0 }
+        if size.height < minimum.height - tolerance { minimum.height = 0 }
+        guard minimum != learned else { return false }
+        windows[id]?.minimumTileSize = minimum == Size(width: 0, height: 0) ? nil : minimum
+        return true
+    }
+
     /// The tiled window a dragged window trades places with when dropped at `point`: the one
     /// whose tile's middle `point` is in. Nearer a tile's edges, it goes in beside that tile.
     func swapPartner(for id: WindowID, at point: Point) -> WindowID? {

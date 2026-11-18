@@ -618,6 +618,20 @@ struct WorldTests {
         #expect(world.frame(1) == Rect(x: 0, y: 0, width: 350, height: 600))
     }
 
+    @Test func minimumSizesAWindowWentBelowAreForgotten() {
+        var world = makeWorld()
+        world.open(1)
+        world.open(2)
+        world.learnMinimumSize(of: 2, observed: Size(width: 650, height: 600), requested: Size(width: 500, height: 600))
+        let jitter = world.forgetMinimumSize(of: 2, seen: Size(width: 645, height: 600))
+        #expect(!jitter)
+        #expect(world.frame(2) == Rect(x: 350, y: 0, width: 650, height: 600))
+        let forgotten = world.forgetMinimumSize(of: 2, seen: Size(width: 500, height: 600))
+        #expect(forgotten)
+        #expect(world.windows[2]?.minimumTileSize == nil)
+        #expect(world.frame(2) == Rect(x: 500, y: 0, width: 500, height: 600))
+    }
+
     @Test func aNewWindowBesideOneAsLargeAsItsTileStillGetsRoom() throws {
         var world = makeWorld()
         world.open(1)

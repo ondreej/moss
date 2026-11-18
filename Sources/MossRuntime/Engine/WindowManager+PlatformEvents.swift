@@ -52,6 +52,9 @@ extension WindowManager {
 
         case .windowFrameChanged(let id, let frame):
             observedFrames[id] = frame
+            if world.forgetMinimumSize(of: id, seen: frame.size) {
+                Log.engine.info("\(id.address, privacy: .public) is smaller than it seemed to need; giving its room back")
+            }
             if coveringWindows.contains(id) {
                 if !coversDisplay(frame) {
                     coveringWindows.remove(id)
